@@ -26,14 +26,18 @@ async function handle(input) {
     const quote = await fetchQuote(input);
     const rows = await fetchHistory(quote.code);
     const metrics = calcMetrics(rows);
+    const news = await fetchNews(quote);
+    const validation = validateData(quote, metrics, news);
     const payload = {
       quote,
       metrics,
+      news,
+      validation,
       score: scoreOf(quote, metrics),
       label: labelFor(quote, metrics),
       strategy: strategyCards(metrics),
       backtest: backtest(rows),
-      report: buildReport(quote, metrics),
+      report: buildReport(quote, metrics, news, validation),
       updatedAt: new Date().toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" })
     };
     return json(payload);
@@ -77,7 +81,7 @@ async function eastmoney(url) {
 async function fetchQuote(input) {
   const code = normalize(input);
   if (!code) throw new Error("请输入股票代码或名称");
-  const fields = "f57,f58,f43,f44,f45,f46,f47,f48,f60,f116,f162,f170";
+  const fields = "f57,f58,f43,f44,f45,f46,f47,f48,f60,f116,f162,f170,f62,f184";
   const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${encodeURIComponent(secid(code))}&fields=${fields}`;
   const data = (await eastmoney(url)).data;
   if (!data || data.f43 === "-") throw new Error("没有找到这只股票");
@@ -94,8 +98,69 @@ async function fetchQuote(input) {
     amount: num(data.f48),
     marketCap: num(data.f116),
     pe: num(data.f162) / 100,
+    mainNetInflow: num(data.f62),
+    mainNetInflowPct: num(data.f184),
     source: "东方财富公开行情接口",
     updatedAt: new Date().toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" })
+  };
+}
+
+async function fetchNews(quote) {
+  try {
+    const keyword = encodeURIComponent(`${quote.name} ${quote.code}`);
+    const url = `https://search-api-web.eastmoney.com/search/jsonp?cb=callback&param=${keyword}`;
+    const text = await (await fetch(url, {
+      headers: {
+        "user-agent": "Mozilla/5.0 StockLab/1.0",
+        "referer": "https://www.eastmoney.com/"
+      }
+    })).text();
+    const match = text.match(/callback\((.*)\)$/);
+    if (!match) return [];
+    const data = JSON.parse(match[1]);
+    const list = data?.result?.cmsArticleWebOld || data?.result?.cmsArticle || [];
+    return list.slice(0, 8).map((item) => ({
+      title: item.title || item.Title || "未命名消息",
+      date: item.showTime || item.publishTime || item.date || "",
+      source: "东方财富搜索"
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function validateData(quote, metrics, news) {
+  const priceGap = Number.isFinite(quote.price) && Number.isFinite(metrics.close)
+    ? Math.abs(quote.price - metrics.close) / Math.max(quote.price, 0.01) * 100
+    : null;
+  const checks = [
+    {
+      name: "行情-K线一致性",
+      ok: priceGap === null || priceGap < 1.5,
+      text: priceGap === null ? "数据不足，暂无法校验。" : `行情价与最近K线收盘价相差 ${fmtPct(priceGap)}。`
+    },
+    {
+      name: "历史样本长度",
+      ok: metrics.rows.length >= 80,
+      text: `当前可用K线样本 ${metrics.rows.length} 条。`
+    },
+    {
+      name: "资金流字段",
+      ok: Number.isFinite(quote.mainNetInflow),
+      text: Number.isFinite(quote.mainNetInflow) ? `主力净流入约 ${fmtMoney(quote.mainNetInflow)}。` : "免费接口未返回资金流字段。"
+    },
+    {
+      name: "消息面覆盖",
+      ok: news.length > 0,
+      text: news.length ? `抓取到 ${news.length} 条近期消息标题。` : "未抓到近期消息，不能强行判断消息面。"
+    }
+  ];
+  const passed = checks.filter((item) => item.ok).length;
+  return {
+    score: Math.round(passed / checks.length * 100),
+    level: passed >= 3 ? "较可信" : passed >= 2 ? "需复核" : "数据不足",
+    checks,
+    sources: ["东方财富公开行情接口", "东方财富历史K线接口", "东方财富搜索"]
   };
 }
 
@@ -270,15 +335,36 @@ function backtest(rows) {
   };
 }
 
-function buildReport(quote, metrics) {
+function buildReport(quote, metrics, news = [], validation = null) {
+  const capitalText = Number.isFinite(quote.mainNetInflow)
+    ? `主力净流入约 ${fmtMoney(quote.mainNetInflow)}，占比 ${fmt(quote.mainNetInflowPct, 2)}%。`
+    : "免费接口未返回资金流，资金面暂无法判断。";
+  const valueText = `总市值约 ${fmtMoney(quote.marketCap)}，市盈率约 ${fmt(quote.pe, 2)}。`;
+  const newsText = news.length
+    ? `近期抓到 ${news.length} 条消息标题，需点开原文确认。`
+    : "近期消息抓取为空，不能用消息面做强判断。";
+  const qualityText = validation
+    ? `数据可靠性：${validation.level}（校验分 ${validation.score}/100）。`
+    : "数据可靠性：未校验。";
   return {
     summary: `${quote.name} 当前为${trend(metrics)}，近20日涨跌 ${fmtPct(metrics.ret20)}，RSI ${fmt(metrics.rsi, 0)}。`,
     position: `当前仓位建议不是买卖指令：已持有先看 ${fmt(metrics.ma20)} 附近是否守住；空仓先看 ${fmt(metrics.ma10)} / ${fmt(metrics.ma20)} 附近是否出现缩量企稳。`,
-    cycle: "仅凭免费行情和K线，产业周期、产能、库存、政策和财务数据不足，暂无法做强结论。",
+    cycle: `行情处在${trend(metrics)}。${valueText} 行业景气、库存、产能、政策需要正式数据源补充，免费版不做强结论。`,
     technical: `趋势：${trend(metrics)}；支撑观察：${fmt(metrics.ma20)}；压力观察：${fmt(metrics.high60)}；近60日最大回撤 ${fmtPct(metrics.drawdown60)}。`,
-    risk: "公开免费接口可能延迟或失败，资金流、龙虎榜、公告原文和财报需要后续接正式数据源交叉验证。",
-    sources: ["东方财富公开行情接口", "东方财富历史K线接口"]
+    capital: capitalText,
+    news: newsText,
+    quality: qualityText,
+    risk: "公开免费接口可能延迟或失败，龙虎榜、公告原文、财报细项和行业数据库仍需要后续接正式数据源交叉验证。",
+    sources: validation?.sources || ["东方财富公开行情接口", "东方财富历史K线接口"]
   };
+}
+
+function fmtMoney(value) {
+  if (!Number.isFinite(value)) return "--";
+  const abs = Math.abs(value);
+  if (abs >= 100000000) return `${(value / 100000000).toFixed(2)}亿`;
+  if (abs >= 10000) return `${(value / 10000).toFixed(2)}万`;
+  return value.toFixed(2);
 }
 
 function fmt(value, digits = 2) {

@@ -79,6 +79,9 @@ const els = {
   restoreDataBtn: $("#restoreDataBtn"),
   thoughtText: $("#thoughtText"),
   saveThoughtBtn: $("#saveThoughtBtn"),
+  demoBtn: $("#demoBtn"),
+  guideBtn: $("#guideBtn"),
+  guidePanel: $("#guidePanel"),
   profitPageText: $("#profitPageText"),
   profitEquity: $("#profitEquity"),
   profitFloating: $("#profitFloating"),
@@ -551,12 +554,33 @@ function renderCloudAnalysis(data) {
     <section class="report-section"><strong>当前仓位建议</strong><br>${data.report.position}</section>
     <section class="report-section"><strong>一、周期框架</strong><br>${data.report.cycle}</section>
     <section class="report-section"><strong>二、K线执行框架</strong><br>${data.report.technical}</section>
-    <section class="report-section"><strong>三、回测结果</strong><br>示例策略历史收益 ${percent(data.backtest.returnPct)}，最大回撤 ${percent(data.backtest.maxDrawdownPct)}，交易次数 ${data.backtest.tradeCount}。${data.backtest.note}</section>
+    <section class="report-section"><strong>三、资金和估值</strong><br>${data.report.capital || "资金流数据不足。"}<br>市值：${formatWanYi(stock.marketCap)}；市盈率：${fixed(stock.pe, 2)}。</section>
+    <section class="report-section"><strong>四、消息和公告</strong><br>${data.report.news || "免费接口未抓到消息。"}${renderNewsLines(data.news)}</section>
+    <section class="report-section"><strong>五、数据可靠性</strong><br>${data.report.quality || "未校验。"}${renderValidation(data.validation)}</section>
+    <section class="report-section"><strong>六、回测结果</strong><br>示例策略历史收益 ${percent(data.backtest.returnPct)}，最大回撤 ${percent(data.backtest.maxDrawdownPct)}，交易次数 ${data.backtest.tradeCount}。${data.backtest.note}</section>
     <section class="conclusion-block"><strong>标签：${data.label}</strong><br>${data.report.risk}</section>
   `;
   if (els.newsCard) els.newsCard.classList.add("hidden");
   els.lastUpdate.textContent = `尾盘纪律检查 · ${stock.updatedAt || data.updatedAt}`;
   els.costInput.placeholder = `成本价，例如 ${fixed(stock.price)}`;
+}
+
+function formatWanYi(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "--";
+  if (Math.abs(num) >= 100000000) return `${(num / 100000000).toFixed(2)}亿`;
+  if (Math.abs(num) >= 10000) return `${(num / 10000).toFixed(2)}万`;
+  return num.toFixed(2);
+}
+
+function renderNewsLines(news = []) {
+  if (!news.length) return "";
+  return `<ul>${news.slice(0, 4).map((item) => `<li>${item.date ? `${item.date}：` : ""}${item.title}</li>`).join("")}</ul>`;
+}
+
+function renderValidation(validation) {
+  if (!validation?.checks?.length) return "";
+  return `<ul>${validation.checks.map((item) => `<li>${item.ok ? "通过" : "需复核"}：${item.name}，${item.text}</li>`).join("")}</ul>`;
 }
 
 async function analyze(input) {
@@ -613,6 +637,22 @@ function saveHolding() {
     portfolio: Number(els.portfolioInput.value) || 0
   });
   setHoldings(list);
+}
+
+function loadDemoPortfolio() {
+  const demo = [
+    { code: "600519", name: "贵州茅台", cost: 1600, shares: 100, portfolio: 260000 },
+    { code: "300059", name: "东方财富", cost: 18.5, shares: 3000, portfolio: 260000 },
+    { code: "000001", name: "平安银行", cost: 11.2, shares: 5000, portfolio: 260000 }
+  ];
+  setHoldings(demo);
+  refreshHoldings();
+  alert("已载入演示组合。你可以随时在设置里清空本地数据。");
+}
+
+function toggleGuide() {
+  if (!els.guidePanel) return;
+  els.guidePanel.classList.toggle("hidden");
 }
 
 function renderHoldings() {
@@ -1083,6 +1123,8 @@ function bindEvents() {
   on(els.refreshBtn, "click", refreshHoldings);
   on($("#quickRefreshBtn"), "click", refreshHoldings);
   on(els.saveHoldingBtn, "click", saveHolding);
+  on(els.demoBtn, "click", loadDemoPortfolio);
+  on(els.guideBtn, "click", toggleGuide);
   on(els.importBtn, "click", importHoldings);
   on(els.fileImportBtn, "click", importHoldingsFromFile);
   on(els.importFile, "change", importHoldingsFromFile);

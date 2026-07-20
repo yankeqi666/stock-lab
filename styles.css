@@ -106,6 +106,36 @@ button { cursor: pointer; }
 }
 .primary-action { color: #0f172a; background: #fff; }
 .secondary-action { color: #e5efff; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.20); }
+.demo-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.demo-actions button {
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.20);
+  background: rgba(255,255,255,.08);
+  color: #dbeafe;
+  font-weight: 900;
+}
+.guide-panel { margin-top: 16px; }
+.guide-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+.guide-grid article {
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: #fbfdff;
+}
+body.dark .guide-grid article { background: #0b1220; }
+.guide-grid strong {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--blue);
+}
+.guide-grid span { display: block; margin-top: 12px; font-size: 21px; font-weight: 950; }
+.guide-grid p { margin: 8px 0 0; color: var(--muted); line-height: 1.6; }
 .market-tabs { display: flex; gap: 18px; overflow-x: auto; padding: 20px 0; }
 .market-tabs button {
   flex: 0 0 auto;
@@ -515,6 +545,7 @@ body.dark .bottom-tabs { background: rgba(17,24,39,.96); }
   .toolbar-row { grid-template-columns: 1fr; }
   .quick-steps { grid-template-columns: 1fr; }
   .quick-actions { grid-template-columns: 1fr; }
+  .guide-grid { grid-template-columns: 1fr; }
   .lab-grid { grid-template-columns: 1fr; }
   .score-wrap { grid-template-columns: 1fr; }
   .gauge { margin: 0 auto; }
