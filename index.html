@@ -74,6 +74,12 @@
             <button id="saveHoldingBtn" type="button">保存</button>
           </div>
           <div class="holding-list" id="holdingList"></div>
+          <div class="watch-actions">
+            <button class="plain-btn" id="startWatchBtn" type="button">开始盯盘</button>
+            <button class="plain-btn" id="briefBtn" type="button">生成复盘</button>
+          </div>
+          <p class="source-line" id="refreshState">尚未刷新</p>
+          <p class="brief-text hidden" id="briefText"></p>
         </section>
 
         <section class="panel score-panel hidden" id="scorePanel">
@@ -103,6 +109,12 @@
         <section class="panel report-panel hidden" id="reportPanel">
           <div class="panel-title"><h2>AI 个股复盘</h2><span class="pill" id="reportLabel">观察</span></div>
           <div class="report-body" id="reportBody"></div>
+        </section>
+
+        <section class="panel news-panel hidden" id="newsCard">
+          <div class="panel-title"><h2>近期消息</h2><span class="pill" id="newsMood">中性</span></div>
+          <p id="newsSummary">暂无消息。</p>
+          <ul id="newsList"></ul>
         </section>
       </main>
 

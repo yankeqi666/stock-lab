@@ -20,6 +20,9 @@ const aliases = {
 };
 
 const $ = (selector) => document.querySelector(selector);
+const on = (element, event, handler) => {
+  if (element) element.addEventListener(event, handler);
+};
 const els = {
   lastUpdate: $("#lastUpdate"),
   refreshBtn: $("#refreshBtn"),
@@ -439,6 +442,7 @@ function drawChart(rows) {
 }
 
 function renderNews(news) {
+  if (!els.newsCard || !els.newsMood || !els.newsSummary || !els.newsList) return;
   els.newsCard.classList.remove("hidden");
   const bad = news.some((item) => /减持|亏损|处罚|风险|下滑|诉讼|退市/.test(item.title));
   const good = news.some((item) => /增长|中标|回购|增持|突破|签约|盈利/.test(item.title));
@@ -533,7 +537,7 @@ function renderCloudAnalysis(data) {
     <section class="report-section"><strong>三、回测结果</strong><br>示例策略历史收益 ${percent(data.backtest.returnPct)}，最大回撤 ${percent(data.backtest.maxDrawdownPct)}，交易次数 ${data.backtest.tradeCount}。${data.backtest.note}</section>
     <section class="conclusion-block"><strong>标签：${data.label}</strong><br>${data.report.risk}</section>
   `;
-  els.newsCard.classList.add("hidden");
+  if (els.newsCard) els.newsCard.classList.add("hidden");
   els.lastUpdate.textContent = `尾盘纪律检查 · ${stock.updatedAt || data.updatedAt}`;
   els.costInput.placeholder = `成本价，例如 ${fixed(stock.price)}`;
 }
@@ -628,7 +632,9 @@ async function refreshHoldings() {
   }
   renderHoldings();
   updateAccount();
-  els.refreshState.textContent = `已更新 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`;
+  if (els.refreshState) {
+    els.refreshState.textContent = `已更新 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`;
+  }
 }
 
 function updateAccount() {
@@ -697,13 +703,14 @@ function startWatch() {
   refreshHoldings();
   clearInterval(watchTimer);
   watchTimer = setInterval(refreshHoldings, 30000);
-  els.startWatchBtn.textContent = "盯盘中";
+  if (els.startWatchBtn) els.startWatchBtn.textContent = "盯盘中";
 }
 
 function makeBrief() {
   refreshHoldings();
   const list = holdings();
   const risky = list.filter((item) => Math.abs(watchQuotes[item.code]?.changePct || 0) >= 3);
+  if (!els.briefText) return;
   els.briefText.classList.remove("hidden");
   els.briefText.textContent = list.length
     ? `今日复盘：共 ${list.length} 只持仓，${risky.length} 只波动超过 3%。先看风险观察线，再看是否仍符合原计划。本工具不建议买卖，只帮你整理。`
@@ -728,23 +735,23 @@ function saveSettings() {
 }
 
 function bindEvents() {
-  els.searchForm.addEventListener("submit", (event) => {
+  on(els.searchForm, "submit", (event) => {
     event.preventDefault();
     analyze(els.stockInput.value);
   });
-  els.refreshBtn.addEventListener("click", refreshHoldings);
-  els.saveHoldingBtn.addEventListener("click", saveHolding);
-  els.startWatchBtn.addEventListener("click", startWatch);
-  els.briefBtn.addEventListener("click", makeBrief);
-  els.saveSettingsBtn.addEventListener("click", saveSettings);
-  els.clearDataBtn.addEventListener("click", () => {
+  on(els.refreshBtn, "click", refreshHoldings);
+  on(els.saveHoldingBtn, "click", saveHolding);
+  on(els.startWatchBtn, "click", startWatch);
+  on(els.briefBtn, "click", makeBrief);
+  on(els.saveSettingsBtn, "click", saveSettings);
+  on(els.clearDataBtn, "click", () => {
     if (!confirm("确定清空本地持仓和设置吗？")) return;
     Object.values(STORAGE).forEach((key) => localStorage.removeItem(key));
     watchQuotes = {};
     loadSettings();
     setHoldings([]);
   });
-  els.holdingList.addEventListener("click", (event) => {
+  on(els.holdingList, "click", (event) => {
     const removeCode = event.target.dataset.remove;
     if (removeCode) {
       setHoldings(holdings().filter((item) => item.code !== removeCode));
