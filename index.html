@@ -62,6 +62,21 @@
           </div>
         </section>
 
+        <section class="panel lab-panel">
+          <div class="panel-title">
+            <div>
+              <h2>量化驾驶舱</h2>
+              <p>先看市场温度，再看个股纪律</p>
+            </div>
+            <span class="pill">收盘复盘</span>
+          </div>
+          <div class="lab-grid">
+            <article><span>大盘温度</span><strong>52</strong><em>中性偏冷</em><i style="--w:52%"></i></article>
+            <article><span>风险暴露</span><strong id="riskExposure">--</strong><em>按持仓仓位估算</em><i style="--w:35%"></i></article>
+            <article><span>纪律队列</span><strong id="disciplineQueue">0</strong><em>待复核股票</em><i style="--w:18%"></i></article>
+          </div>
+        </section>
+
         <section class="panel holdings-panel">
           <div class="panel-title">
             <h2>当前持仓</h2>
@@ -78,8 +93,21 @@
             <button class="plain-btn" id="startWatchBtn" type="button">开始盯盘</button>
             <button class="plain-btn" id="briefBtn" type="button">生成复盘</button>
           </div>
+          <details class="import-box">
+            <summary>从券商导入持仓</summary>
+            <p>把券商软件导出的持仓表复制到这里。格式：代码,名称,成本价,股数,账户总额。数据只保存在本机浏览器。</p>
+            <textarea id="importText" rows="5" placeholder="600519,贵州茅台,1600,100,200000&#10;300059,东方财富,18.5,1000,200000"></textarea>
+            <button class="wide-btn" id="importBtn" type="button">导入持仓</button>
+          </details>
           <p class="source-line" id="refreshState">尚未刷新</p>
           <p class="brief-text hidden" id="briefText"></p>
+        </section>
+
+        <section class="panel risk-panel">
+          <div class="panel-title"><h2>风险队列</h2><span class="pill" id="riskCount">0 条</span></div>
+          <div class="risk-list" id="riskList">
+            <div class="risk-row"><strong>等待刷新持仓</strong><span>有持仓后会显示破位、重仓、波动过大的项目。</span></div>
+          </div>
         </section>
 
         <section class="panel score-panel hidden" id="scorePanel">
@@ -131,6 +159,14 @@
           <label class="toggle-row"><input id="darkModeToggle" type="checkbox" /><span>深色模式</span></label>
           <button class="wide-btn" id="saveSettingsBtn" type="button">保存设置</button>
           <button class="danger-btn" id="clearDataBtn" type="button">清空本地数据</button>
+        </section>
+        <section class="panel broker-card">
+          <h2>证券账户连接</h2>
+          <div class="broker-grid">
+            <article><strong>安全版</strong><span>券商导出持仓 CSV，你手动导入。最稳，不碰账号密码。</span></article>
+            <article><strong>专业版</strong><span>使用券商官方 QMT / PTrade / Matic 通道，在本地电脑连接。</span></article>
+            <article><strong>禁止做</strong><span>不要在网页里填券商账号密码，不做抓包登录，不代替你下单。</span></article>
+          </div>
         </section>
       </section>
 

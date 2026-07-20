@@ -40,6 +40,8 @@ const els = {
   costInput: $("#costInput"),
   sharesInput: $("#sharesInput"),
   portfolioInput: $("#portfolioInput"),
+  importText: $("#importText"),
+  importBtn: $("#importBtn"),
   saveHoldingBtn: $("#saveHoldingBtn"),
   startWatchBtn: $("#startWatchBtn"),
   refreshState: $("#refreshState"),
@@ -621,17 +623,83 @@ function renderHoldings() {
   }).join("");
 }
 
+function importHoldings() {
+  const raw = els.importText?.value || "";
+  const rows = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!rows.length) {
+    alert("请先粘贴持仓表。");
+    return;
+  }
+  const parsed = rows.map((line) => {
+    const parts = line.split(/,|\t/).map((item) => item.trim());
+    return {
+      code: normalizeCode(parts[0] || ""),
+      name: parts[1] || normalizeCode(parts[0] || ""),
+      cost: Number(parts[2]) || 0,
+      shares: Number(parts[3]) || 0,
+      portfolio: Number(parts[4]) || 0
+    };
+  }).filter((item) => item.code && item.shares);
+  if (!parsed.length) {
+    alert("没有识别到持仓。格式：代码,名称,成本价,股数,账户总额");
+    return;
+  }
+  const merged = [...parsed, ...holdings()].reduce((map, item) => {
+    map.set(item.code, item);
+    return map;
+  }, new Map());
+  setHoldings([...merged.values()]);
+  if (els.importText) els.importText.value = "";
+  alert(`已导入 ${parsed.length} 条持仓。`);
+}
+
+function renderRiskQueue(items) {
+  const riskList = $("#riskList");
+  const riskCount = $("#riskCount");
+  const riskExposure = $("#riskExposure");
+  const disciplineQueue = $("#disciplineQueue");
+  if (!riskList || !riskCount) return;
+  const rows = [];
+  let exposure = 0;
+  items.forEach((item) => {
+    const quote = item.quote;
+    if (!quote || !item.shares) return;
+    const marketValue = quote.price * item.shares;
+    const position = item.portfolio ? (marketValue / item.portfolio) * 100 : null;
+    const floating = item.cost ? (quote.price - item.cost) * item.shares : null;
+    if (Number.isFinite(position)) exposure += position;
+    if (Number.isFinite(position) && position > 35) {
+      rows.push({ level: "hot", title: `${item.name} 仓位偏重`, text: `单只仓位约 ${fixed(position, 1)}%，先确认是否超过家庭账户承受范围。` });
+    }
+    if (Math.abs(quote.changePct) >= 3) {
+      rows.push({ level: "warn", title: `${item.name} 今日波动较大`, text: `今日涨跌 ${percent(quote.changePct)}，先看风险观察线，不凭情绪操作。` });
+    }
+    if (Number.isFinite(floating) && floating < 0) {
+      rows.push({ level: "warn", title: `${item.name} 处于浮亏`, text: `浮亏约 ${money(Math.abs(floating))}，复核买入理由和止损纪律。` });
+    }
+  });
+  if (riskExposure) riskExposure.textContent = items.length ? `${fixed(exposure, 0)}%` : "--";
+  if (disciplineQueue) disciplineQueue.textContent = rows.length;
+  riskCount.textContent = `${rows.length} 条`;
+  riskList.innerHTML = rows.length
+    ? rows.slice(0, 6).map((row) => `<div class="risk-row ${row.level}"><strong>${row.title}</strong><span>${row.text}</span></div>`).join("")
+    : `<div class="risk-row"><strong>暂无明显风险项</strong><span>没有识别到重仓、剧烈波动或浮亏项。仍需以券商和公告数据为准。</span></div>`;
+}
+
 async function refreshHoldings() {
   const list = holdings();
+  const enriched = [];
   for (const item of list) {
     try {
       watchQuotes[item.code] = await fetchQuote(item.code);
     } catch {
       // Keep the previous quote when a public endpoint is temporarily unavailable.
     }
+    enriched.push({ ...item, quote: watchQuotes[item.code] });
   }
   renderHoldings();
   updateAccount();
+  renderRiskQueue(enriched);
   if (els.refreshState) {
     els.refreshState.textContent = `已更新 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`;
   }
@@ -741,6 +809,7 @@ function bindEvents() {
   });
   on(els.refreshBtn, "click", refreshHoldings);
   on(els.saveHoldingBtn, "click", saveHolding);
+  on(els.importBtn, "click", importHoldings);
   on(els.startWatchBtn, "click", startWatch);
   on(els.briefBtn, "click", makeBrief);
   on(els.saveSettingsBtn, "click", saveSettings);
