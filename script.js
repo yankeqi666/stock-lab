@@ -79,6 +79,11 @@ const els = {
   restoreDataBtn: $("#restoreDataBtn"),
   thoughtText: $("#thoughtText"),
   saveThoughtBtn: $("#saveThoughtBtn"),
+  makeReviewBtn: $("#makeReviewBtn"),
+  analyzeThoughtBtn: $("#analyzeThoughtBtn"),
+  autoReview: $("#autoReview"),
+  thoughtReview: $("#thoughtReview"),
+  reviewDate: $("#reviewDate"),
   demoBtn: $("#demoBtn"),
   guideBtn: $("#guideBtn"),
   guidePanel: $("#guidePanel"),
@@ -95,6 +100,7 @@ const els = {
 let currentStock = null;
 let currentMetrics = null;
 let watchQuotes = {};
+let lastEnrichedHoldings = [];
 let watchTimer = null;
 
 function loadJson(key, fallback) {
@@ -879,10 +885,12 @@ async function refreshHoldings() {
     }
     enriched.push({ ...item, quote, metrics });
   }
+  lastEnrichedHoldings = enriched;
   renderHoldings();
   updateAccount();
   renderRiskQueue(enriched);
   renderHoldingWarnings(enriched);
+  updateReviewDate();
   if (els.refreshState) {
     els.refreshState.textContent = `已更新 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`;
   }
@@ -1057,6 +1065,74 @@ function makeBrief() {
   els.briefText.textContent = list.length
     ? `今日复盘：共 ${list.length} 只持仓，${risky.length} 只波动超过 3%。先看风险观察线，再看是否仍符合原计划。本工具不建议买卖，只帮你整理。`
     : "还没有持仓，先添加股票。";
+  setTimeout(makeCloseReview, 500);
+}
+
+function updateReviewDate() {
+  if (!els.reviewDate) return;
+  const now = new Date();
+  els.reviewDate.textContent = now.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" });
+}
+
+function makeCloseReview() {
+  const items = lastEnrichedHoldings.length
+    ? lastEnrichedHoldings
+    : holdings().map((item) => ({ ...item, quote: watchQuotes[item.code], metrics: null }));
+  if (!items.length) {
+    if (els.autoReview) {
+      els.autoReview.innerHTML = "还没有持仓。先保存或导入持仓，再生成收盘复盘。";
+    }
+    return;
+  }
+  const risks = items.map((item) => ({ item, risk: holdingRisk(item) }));
+  const high = risks.filter((row) => row.risk.level === "high");
+  const mid = risks.filter((row) => row.risk.level === "mid");
+  const totalValue = items.reduce((sum, item) => {
+    const quote = item.quote;
+    return sum + (quote && item.shares ? quote.price * item.shares : 0);
+  }, 0);
+  const todayProfit = items.reduce((sum, item) => {
+    const quote = item.quote;
+    return sum + (quote && item.shares ? (quote.price - quote.prevClose) * item.shares : 0);
+  }, 0);
+  const topRisks = [...high, ...mid].slice(0, 4);
+  const tomorrow = topRisks.length
+    ? topRisks.map(({ item, risk }) => `<li>${item.name}：${risk.text}</li>`).join("")
+    : "<li>没有明显高风险项，继续按原计划观察。</li>";
+  if (els.autoReview) {
+    els.autoReview.innerHTML = `
+      <strong>今日组合状态</strong>
+      当前持仓 ${items.length} 只，估算市值 ${money(totalValue)}，今日盈亏 ${money(todayProfit)}。
+      高风险 ${high.length} 只，中风险 ${mid.length} 只。
+      <strong>明日优先观察</strong>
+      <ul>${tomorrow}</ul>
+      <strong>纪律提醒</strong>
+      今天复盘重点不是预测明天涨跌，而是确认：仓位是否过重、是否跌破风险观察线、原买入理由是否还成立。
+    `;
+  }
+}
+
+function analyzeThoughts() {
+  const text = (els.thoughtText?.value || "").trim();
+  if (!els.thoughtReview) return;
+  if (!text) {
+    els.thoughtReview.classList.remove("hidden");
+    els.thoughtReview.innerHTML = "你还没有写总结。可以先写：今天为什么持有、哪里可能看错、明天重点看什么。";
+    return;
+  }
+  const checks = [
+    { ok: /成本|买入|持仓|仓位/.test(text), good: "提到了成本/仓位。", bad: "没有提到成本或仓位，建议补上。" },
+    { ok: /风险|止损|破位|观察线|MA20|亏损/.test(text), good: "提到了风险或观察线。", bad: "没有写风险线，容易变成情绪化复盘。" },
+    { ok: /明天|下次|计划|如果|等待|复核/.test(text), good: "有下一步计划。", bad: "没有下一步条件，建议写清楚什么情况继续观察。" },
+    { ok: !/肯定|必涨|稳赢|梭哈|满仓|一定/.test(text), good: "没有明显绝对化词语。", bad: "出现绝对化/冲动词，建议改成条件句。" }
+  ];
+  els.thoughtReview.classList.remove("hidden");
+  els.thoughtReview.innerHTML = `
+    <strong>你的总结纪律检查</strong>
+    <ul>${checks.map((item) => `<li>${item.ok ? item.good : item.bad}</li>`).join("")}</ul>
+    <strong>建议改写方向</strong>
+    用“如果...就复核...”替代“肯定会...”。先写风险，再写期待。
+  `;
 }
 
 function loadSettings() {
@@ -1134,6 +1210,8 @@ function bindEvents() {
   on(els.briefBtn, "click", makeBrief);
   on(els.saveSettingsBtn, "click", saveSettings);
   on(els.saveThoughtBtn, "click", saveThoughts);
+  on(els.makeReviewBtn, "click", makeCloseReview);
+  on(els.analyzeThoughtBtn, "click", analyzeThoughts);
   on(els.exportDataBtn, "click", exportData);
   on(els.restoreDataBtn, "click", restoreData);
   on(els.restoreDataFile, "change", restoreData);

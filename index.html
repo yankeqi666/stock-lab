@@ -255,10 +255,23 @@
       </section>
       <section class="page" id="thinkPage">
         <section class="panel">
-          <h2>复盘笔记</h2>
-          <p>把买入理由、风险线、复盘结论写下来，避免临场凭情绪操作。</p>
+          <div class="panel-title">
+            <div>
+              <h2>收盘复盘助手</h2>
+              <p>系统先总结当前持仓，你再补充自己的判断</p>
+            </div>
+            <span class="pill" id="reviewDate">今日</span>
+          </div>
+          <div class="review-box" id="autoReview">
+            保存或导入持仓后，点击“生成收盘复盘”，系统会汇总持仓风险、仓位和明日观察重点。
+          </div>
+          <button class="wide-btn" id="makeReviewBtn" type="button">生成收盘复盘</button>
           <textarea id="thoughtText" class="note-area" rows="9" placeholder="例如：这只股票的买入理由是什么？什么情况说明我看错了？最大能承受多少仓位？"></textarea>
-          <button class="wide-btn" id="saveThoughtBtn" type="button">保存笔记</button>
+          <div class="watch-actions">
+            <button class="wide-btn" id="saveThoughtBtn" type="button">保存我的总结</button>
+            <button class="plain-btn" id="analyzeThoughtBtn" type="button">分析我的总结</button>
+          </div>
+          <div class="review-box hidden" id="thoughtReview"></div>
         </section>
       </section>
       <section class="page" id="learnPage">

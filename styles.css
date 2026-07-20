@@ -505,6 +505,7 @@ body.dark .profit-board article { background: #0b1220; }
 .profit-board strong { display: block; margin-top: 8px; font-size: 26px; font-weight: 950; }
 .note-area {
   width: 100%;
+  margin-top: 14px;
   border: 1px solid var(--line);
   border-radius: 18px;
   padding: 16px;
@@ -514,6 +515,20 @@ body.dark .profit-board article { background: #0b1220; }
   line-height: 1.7;
   resize: vertical;
 }
+.review-box {
+  margin-top: 16px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid #bfdbfe;
+  background: linear-gradient(180deg, #eff6ff, #ffffff);
+  color: #17345d;
+  line-height: 1.8;
+  font-size: 18px;
+}
+body.dark .review-box { background: #0b1220; color: #dbeafe; border-color: #1e3a8a; }
+.review-box strong { display: block; margin-top: 10px; color: var(--text); font-size: 20px; }
+.review-box ul { margin: 8px 0 0; padding-left: 20px; }
+.review-box li { margin-top: 6px; }
 .advanced-box { border: 1px solid var(--line); border-radius: 18px; padding: 16px; }
 .advanced-box summary { cursor: pointer; font-size: 20px; font-weight: 950; }
 .advanced-box label { display: block; margin-top: 12px; }
