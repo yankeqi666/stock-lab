@@ -10,8 +10,9 @@
     <div class="app-shell">
       <header class="hero-head">
         <div>
-          <h1>Stock Lab</h1>
-          <p id="lastUpdate">尾盘纪律检查 · 等待刷新</p>
+          <span class="eyebrow">STOCK LAB</span>
+          <h1>持仓风险工作台</h1>
+          <p id="lastUpdate">打开就能复盘 · 等待刷新</p>
           <div class="trust-row">
             <span>免费可用</span>
             <span>本地保存</span>
@@ -22,18 +23,21 @@
       </header>
 
       <main class="page active" id="homePage">
-        <section class="panel quick-start-panel">
+        <section class="hero-card">
           <div class="panel-title">
             <div>
-              <h2>今天只做三件事</h2>
-              <p>不用设置 API，不用连接证券账户</p>
+              <h2>今天先看哪里</h2>
+              <p>先看账户风险，再看单只股票</p>
             </div>
-            <span class="pill ok">简单模式</span>
+            <span class="pill ok" id="healthPill">等待数据</span>
           </div>
-          <div class="quick-steps">
-            <button type="button" data-focus="stockInput"><strong>1</strong><span>查股票</span><em>输入代码或名称</em></button>
-            <button type="button" data-focus="costInput"><strong>2</strong><span>填持仓</span><em>成本和股数</em></button>
-            <button type="button" id="quickRefreshBtn"><strong>3</strong><span>看提醒</span><em>刷新风险队列</em></button>
+          <div class="insight-copy" id="portfolioInsight">
+            保存或导入持仓后，这里会直接告诉你今天最需要复核什么。
+          </div>
+          <div class="quick-actions">
+            <button class="primary-action" type="button" data-focus="stockInput">查一只股票</button>
+            <button class="secondary-action" type="button" data-focus="costInput">添加持仓</button>
+            <button class="secondary-action" type="button" id="quickRefreshBtn">刷新提醒</button>
           </div>
         </section>
 
@@ -55,7 +59,7 @@
           <button type="button" data-code="589020">科创半导体</button>
         </div>
 
-        <section class="panel account-panel">
+        <section class="panel account-panel compact-panel">
           <div class="panel-title">
             <div>
               <h2>账户概览</h2>
@@ -68,6 +72,22 @@
             <article><span>今日</span><strong id="todayValue" class="num-red">¥--</strong><em>按持仓最新价</em></article>
             <article><span>浮盈亏</span><strong id="profitValue" class="num-red">¥--</strong><em>未实现盈亏</em></article>
             <article><span>机会</span><strong id="chanceValue">0/0</strong><em>主动交易批次</em></article>
+          </div>
+        </section>
+
+        <section class="panel warning-panel priority-panel">
+          <div class="panel-title">
+            <div>
+              <h2>当前持仓预警机</h2>
+              <p>逐只股票检查成本、仓位、波动和风险线</p>
+            </div>
+            <span class="pill" id="warningCount">0 只</span>
+          </div>
+          <div class="warning-list" id="warningList">
+            <div class="warning-card">
+              <strong>还没有持仓数据</strong>
+              <p>保存或导入持仓后，点击刷新生成预警卡。</p>
+            </div>
           </div>
         </section>
 
@@ -88,20 +108,9 @@
           </div>
         </section>
 
-        <section class="panel insight-panel">
-          <div class="panel-title">
-            <div>
-              <h2>组合健康摘要</h2>
-              <p>把持仓翻译成一句能执行的话</p>
-            </div>
-            <span class="pill" id="healthPill">等待数据</span>
-          </div>
-          <div class="insight-copy" id="portfolioInsight">
-            保存或导入持仓后，这里会汇总今日最需要看的风险。
-          </div>
-        </section>
-
-        <section class="panel lab-panel">
+        <details class="fold-section">
+          <summary>查看量化驾驶舱</summary>
+          <section class="panel lab-panel">
           <div class="panel-title">
             <div>
               <h2>量化驾驶舱</h2>
@@ -114,7 +123,8 @@
             <article><span>风险暴露</span><strong id="riskExposure">--</strong><em>按持仓仓位估算</em><i style="--w:35%"></i></article>
             <article><span>纪律队列</span><strong id="disciplineQueue">0</strong><em>待复核股票</em><i style="--w:18%"></i></article>
           </div>
-        </section>
+          </section>
+        </details>
 
         <section class="panel holdings-panel">
           <div class="panel-title">
@@ -166,22 +176,6 @@
           <div class="panel-title"><h2>风险队列</h2><span class="pill" id="riskCount">0 条</span></div>
           <div class="risk-list" id="riskList">
             <div class="risk-row"><strong>等待刷新持仓</strong><span>有持仓后会显示破位、重仓、波动过大的项目。</span></div>
-          </div>
-        </section>
-
-        <section class="panel warning-panel">
-          <div class="panel-title">
-            <div>
-              <h2>当前持仓预警机</h2>
-              <p>逐只股票检查成本、仓位、波动和风险线</p>
-            </div>
-            <span class="pill" id="warningCount">0 只</span>
-          </div>
-          <div class="warning-list" id="warningList">
-            <div class="warning-card">
-              <strong>还没有持仓数据</strong>
-              <p>保存或导入持仓后，点击刷新生成预警卡。</p>
-            </div>
           </div>
         </section>
 

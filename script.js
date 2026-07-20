@@ -562,6 +562,11 @@ function renderCloudAnalysis(data) {
 async function analyze(input) {
   const code = normalizeCode(input);
   if (!code) return;
+  const submitButton = els.searchForm?.querySelector("button[type='submit']");
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.textContent = "分析中";
+  }
   els.scorePanel.classList.add("hidden");
   els.strategyPanel.classList.add("hidden");
   els.chartPanel.classList.add("hidden");
@@ -586,6 +591,11 @@ async function analyze(input) {
   } catch (error) {
     alert(`${error.message}。如果是在 Cloudflare Pages 上遇到跨域限制，可改接 Tushare/聚宽等带 Key 的数据源或加后端代理。`);
     els.lastUpdate.textContent = "尾盘纪律检查 · 数据读取失败";
+  } finally {
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = "分析";
+    }
   }
 }
 
@@ -808,6 +818,10 @@ function renderPortfolioInsight(items, risks) {
 }
 
 async function refreshHoldings() {
+  if (els.refreshBtn) {
+    els.refreshBtn.disabled = true;
+    els.refreshBtn.textContent = "刷新中";
+  }
   const list = holdings();
   const enriched = [];
   for (const item of list) {
@@ -831,6 +845,10 @@ async function refreshHoldings() {
   renderHoldingWarnings(enriched);
   if (els.refreshState) {
     els.refreshState.textContent = `已更新 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`;
+  }
+  if (els.refreshBtn) {
+    els.refreshBtn.disabled = false;
+    els.refreshBtn.textContent = "刷新";
   }
 }
 
@@ -892,7 +910,7 @@ function renderHoldingWarnings(items) {
     const position = marketValue && item.portfolio ? (marketValue / item.portfolio) * 100 : null;
     const riskLine = metrics?.ma20;
     return `
-      <article class="warning-card">
+      <article class="warning-card risk-${risk.level}">
         <div class="warning-head">
           <div>
             <strong>${item.name}</strong>
@@ -906,7 +924,7 @@ function renderHoldingWarnings(items) {
           <div><span>仓位占比</span><strong>${Number.isFinite(position) ? `${fixed(position, 1)}%` : "--"}</strong></div>
           <div><span>风险观察线</span><strong>${Number.isFinite(riskLine) ? `MA20 ${fixed(riskLine)}` : "--"}</strong></div>
         </div>
-        <p class="warning-note">${risk.text}。这不是买卖建议，只是提醒你复核持仓纪律。</p>
+        <p class="warning-note">${risk.text}。先复核原因和仓位，不要凭当天情绪操作。</p>
       </article>
     `;
   }).join("");
