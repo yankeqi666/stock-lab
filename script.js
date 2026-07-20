@@ -1,8 +1,6 @@
 const STORAGE = {
   holdings: "stock_lab_holdings",
-  apiBase: "stock_lab_api_base",
-  apiKey: "stock_lab_api_key",
-  model: "stock_lab_model",
+  thoughts: "stock_lab_thoughts",
   dark: "stock_lab_dark"
 };
 
@@ -40,8 +38,16 @@ const els = {
   costInput: $("#costInput"),
   sharesInput: $("#sharesInput"),
   portfolioInput: $("#portfolioInput"),
+  holdingSort: $("#holdingSort"),
+  clearSearchBtn: $("#clearSearchBtn"),
   importText: $("#importText"),
+  importFile: $("#importFile"),
   importBtn: $("#importBtn"),
+  fileImportBtn: $("#fileImportBtn"),
+  screenshotFile: $("#screenshotFile"),
+  screenshotPreview: $("#screenshotPreview"),
+  screenshotBtn: $("#screenshotBtn"),
+  screenshotHint: $("#screenshotHint"),
   saveHoldingBtn: $("#saveHoldingBtn"),
   startWatchBtn: $("#startWatchBtn"),
   refreshState: $("#refreshState"),
@@ -65,13 +71,22 @@ const els = {
   newsMood: $("#newsMood"),
   newsSummary: $("#newsSummary"),
   newsList: $("#newsList"),
-  apiBase: $("#apiBase"),
-  apiKey: $("#apiKey"),
-  modelName: $("#modelName"),
   darkModeToggle: $("#darkModeToggle"),
   saveSettingsBtn: $("#saveSettingsBtn"),
   clearDataBtn: $("#clearDataBtn"),
-  profitPageText: $("#profitPageText")
+  exportDataBtn: $("#exportDataBtn"),
+  restoreDataFile: $("#restoreDataFile"),
+  restoreDataBtn: $("#restoreDataBtn"),
+  thoughtText: $("#thoughtText"),
+  saveThoughtBtn: $("#saveThoughtBtn"),
+  profitPageText: $("#profitPageText"),
+  profitEquity: $("#profitEquity"),
+  profitFloating: $("#profitFloating"),
+  profitToday: $("#profitToday"),
+  portfolioInsight: $("#portfolioInsight"),
+  healthPill: $("#healthPill"),
+  pendingList: $("#pendingList"),
+  pendingCount: $("#pendingCount")
 };
 
 let currentStock = null;
@@ -551,7 +566,7 @@ async function analyze(input) {
   els.strategyPanel.classList.add("hidden");
   els.chartPanel.classList.add("hidden");
   els.reportPanel.classList.add("hidden");
-  els.newsCard.classList.add("hidden");
+  if (els.newsCard) els.newsCard.classList.add("hidden");
   els.lastUpdate.textContent = "正在读取公开行情...";
   try {
     if (location.protocol !== "file:") {
@@ -591,7 +606,19 @@ function saveHolding() {
 }
 
 function renderHoldings() {
-  const list = holdings();
+  const sortMode = els.holdingSort?.value || "risk";
+  const list = [...holdings()].sort((a, b) => {
+    const qa = watchQuotes[a.code];
+    const qb = watchQuotes[b.code];
+    const pa = qa && a.cost && a.shares ? (qa.price - a.cost) * a.shares : 0;
+    const pb = qb && b.cost && b.shares ? (qb.price - b.cost) * b.shares : 0;
+    const posa = qa && a.shares && a.portfolio ? (qa.price * a.shares / a.portfolio) : 0;
+    const posb = qb && b.shares && b.portfolio ? (qb.price * b.shares / b.portfolio) : 0;
+    if (sortMode === "profit") return pa - pb;
+    if (sortMode === "position") return posb - posa;
+    if (sortMode === "name") return String(a.name).localeCompare(String(b.name), "zh-CN");
+    return Math.abs(qb?.changePct || 0) - Math.abs(qa?.changePct || 0);
+  });
   els.holdingCount.textContent = `${list.length} 只`;
   if (!list.length) {
     els.holdingList.innerHTML = `
@@ -625,23 +652,47 @@ function renderHoldings() {
 
 function importHoldings() {
   const raw = els.importText?.value || "";
+  importHoldingsFromText(raw);
+}
+
+function splitLine(line) {
+  if (line.includes("\t")) return line.split("\t").map((item) => item.trim());
+  return line.split(",").map((item) => item.trim().replace(/^"|"$/g, ""));
+}
+
+function findColumn(headers, words, fallback) {
+  const index = headers.findIndex((header) => words.some((word) => header.includes(word)));
+  return index >= 0 ? index : fallback;
+}
+
+function parseHoldingText(raw) {
   const rows = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  if (!rows.length) {
-    alert("请先粘贴持仓表。");
-    return;
-  }
-  const parsed = rows.map((line) => {
-    const parts = line.split(/,|\t/).map((item) => item.trim());
+  if (!rows.length) return [];
+  const first = splitLine(rows[0]);
+  const hasHeader = first.some((item) => /代码|证券|股票|名称|成本|持仓|数量|股份|股数/.test(item));
+  const headers = hasHeader ? first : [];
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+  const codeIndex = hasHeader ? findColumn(headers, ["代码", "证券代码", "股票代码"], 0) : 0;
+  const nameIndex = hasHeader ? findColumn(headers, ["名称", "证券名称", "股票名称"], 1) : 1;
+  const costIndex = hasHeader ? findColumn(headers, ["成本", "成本价", "买入均价", "持仓成本"], 2) : 2;
+  const sharesIndex = hasHeader ? findColumn(headers, ["股数", "数量", "持仓", "股份", "可用"], 3) : 3;
+  const portfolioIndex = hasHeader ? findColumn(headers, ["账户", "总额", "资产", "权益"], 4) : 4;
+  return dataRows.map((line) => {
+    const parts = splitLine(line);
     return {
-      code: normalizeCode(parts[0] || ""),
-      name: parts[1] || normalizeCode(parts[0] || ""),
-      cost: Number(parts[2]) || 0,
-      shares: Number(parts[3]) || 0,
-      portfolio: Number(parts[4]) || 0
+      code: normalizeCode(parts[codeIndex] || ""),
+      name: parts[nameIndex] || normalizeCode(parts[codeIndex] || ""),
+      cost: Number(String(parts[costIndex] || "").replace(/[^\d.-]/g, "")) || 0,
+      shares: Number(String(parts[sharesIndex] || "").replace(/[^\d.-]/g, "")) || 0,
+      portfolio: Number(String(parts[portfolioIndex] || "").replace(/[^\d.-]/g, "")) || 0
     };
   }).filter((item) => item.code && item.shares);
+}
+
+function importHoldingsFromText(raw) {
+  const parsed = parseHoldingText(raw);
   if (!parsed.length) {
-    alert("没有识别到持仓。格式：代码,名称,成本价,股数,账户总额");
+    alert("没有识别到持仓。请确认文件里有股票代码、名称、成本价、股数。");
     return;
   }
   const merged = [...parsed, ...holdings()].reduce((map, item) => {
@@ -651,6 +702,43 @@ function importHoldings() {
   setHoldings([...merged.values()]);
   if (els.importText) els.importText.value = "";
   alert(`已导入 ${parsed.length} 条持仓。`);
+}
+
+function importHoldingsFromFile() {
+  const file = els.importFile?.files?.[0];
+  if (!file) {
+    els.importFile?.click();
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => importHoldingsFromText(String(reader.result || ""));
+  reader.onerror = () => alert("文件读取失败，请换成 CSV 或 TXT。");
+  reader.readAsText(file, "utf-8");
+}
+
+function previewScreenshot() {
+  const file = els.screenshotFile?.files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith("image/")) {
+    alert("请选择图片截图。");
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  if (els.screenshotPreview) {
+    els.screenshotPreview.src = url;
+    els.screenshotPreview.classList.remove("hidden");
+  }
+  if (els.screenshotHint) {
+    els.screenshotHint.textContent = "截图已加载。请确认已遮住姓名、资金账号、身份证、手机号。自动识别需要接 OCR / 视觉模型接口；当前免费版不会把图片上传到服务器。";
+  }
+}
+
+function explainScreenshotImport() {
+  if (!els.screenshotFile?.files?.[0]) {
+    els.screenshotFile?.click();
+    return;
+  }
+  alert("截图导入的安全流程是：先遮住账号隐私，再上传截图识别。当前免费版只做本地预览，不上传图片；要自动识别，需要接 OCR 或视觉模型 API。");
 }
 
 function renderRiskQueue(items) {
@@ -684,6 +772,39 @@ function renderRiskQueue(items) {
   riskList.innerHTML = rows.length
     ? rows.slice(0, 6).map((row) => `<div class="risk-row ${row.level}"><strong>${row.title}</strong><span>${row.text}</span></div>`).join("")
     : `<div class="risk-row"><strong>暂无明显风险项</strong><span>没有识别到重仓、剧烈波动或浮亏项。仍需以券商和公告数据为准。</span></div>`;
+  if (els.pendingCount) els.pendingCount.textContent = `${rows.length} 条`;
+  if (els.pendingList) {
+    els.pendingList.innerHTML = rows.length
+      ? rows.map((row) => `<div class="risk-row ${row.level}"><strong>${row.title}</strong><span>${row.text}</span></div>`).join("")
+      : `<div class="risk-row"><strong>暂无待复核项目</strong><span>刷新持仓后，会把中高风险项目自动放到这里。</span></div>`;
+  }
+  renderPortfolioInsight(items, rows);
+}
+
+function renderPortfolioInsight(items, risks) {
+  if (!els.portfolioInsight || !els.healthPill) return;
+  if (!items.length) {
+    els.healthPill.textContent = "等待数据";
+    els.portfolioInsight.textContent = "保存或导入持仓后，这里会汇总今日最需要看的风险。";
+    return;
+  }
+  const high = risks.filter((item) => item.level === "hot").length;
+  const warn = risks.filter((item) => item.level === "warn").length;
+  const totalPosition = items.reduce((sum, item) => {
+    const quote = item.quote;
+    if (!quote || !item.shares || !item.portfolio) return sum;
+    return sum + quote.price * item.shares / item.portfolio * 100;
+  }, 0);
+  if (high) {
+    els.healthPill.textContent = "需复核";
+    els.portfolioInsight.textContent = `今天优先看 ${high} 个高风险项。组合仓位约 ${fixed(totalPosition, 0)}%，先确认是否有重仓、破线或大幅浮亏。`;
+  } else if (warn) {
+    els.healthPill.textContent = "有提醒";
+    els.portfolioInsight.textContent = `今天有 ${warn} 个提醒项。先看波动较大的持仓，再决定是否继续观察。`;
+  } else {
+    els.healthPill.textContent = "较平稳";
+    els.portfolioInsight.textContent = `当前没有明显高风险提示。组合仓位约 ${fixed(totalPosition, 0)}%，继续按原计划复盘。`;
+  }
 }
 
 async function refreshHoldings() {
@@ -695,14 +816,100 @@ async function refreshHoldings() {
     } catch {
       // Keep the previous quote when a public endpoint is temporarily unavailable.
     }
-    enriched.push({ ...item, quote: watchQuotes[item.code] });
+    const quote = watchQuotes[item.code];
+    let metrics = null;
+    try {
+      if (quote) metrics = calcMetrics(await fetchHistory(item.code));
+    } catch {
+      metrics = null;
+    }
+    enriched.push({ ...item, quote, metrics });
   }
   renderHoldings();
   updateAccount();
   renderRiskQueue(enriched);
+  renderHoldingWarnings(enriched);
   if (els.refreshState) {
     els.refreshState.textContent = `已更新 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`;
   }
+}
+
+function holdingRisk(item) {
+  const quote = item.quote;
+  const metrics = item.metrics;
+  if (!quote) return { level: "mid", text: "行情读取失败，暂时无法判断。", badge: "待确认" };
+  const marketValue = item.shares ? quote.price * item.shares : 0;
+  const position = item.portfolio ? (marketValue / item.portfolio) * 100 : null;
+  const profitPct = item.cost ? ((quote.price - item.cost) / item.cost) * 100 : null;
+  const belowRiskLine = metrics?.ma20 ? quote.price < metrics.ma20 : false;
+  let points = 0;
+  const reasons = [];
+  if (Number.isFinite(position) && position > 35) {
+    points += 2;
+    reasons.push("单只仓位偏重");
+  }
+  if (Number.isFinite(profitPct) && profitPct < -8) {
+    points += 2;
+    reasons.push("距离成本亏损较多");
+  } else if (Number.isFinite(profitPct) && profitPct < 0) {
+    points += 1;
+    reasons.push("当前低于成本价");
+  }
+  if (Math.abs(quote.changePct) >= 3) {
+    points += 1;
+    reasons.push("今日波动较大");
+  }
+  if (belowRiskLine) {
+    points += 2;
+    reasons.push("跌破 MA20 风险观察线");
+  }
+  if (metrics?.rsi > 72) {
+    points += 1;
+    reasons.push("短线偏热");
+  }
+  if (!reasons.length) reasons.push("暂无明显异常");
+  if (points >= 4) return { level: "high", badge: "高风险", text: reasons.join("，") };
+  if (points >= 2) return { level: "mid", badge: "中风险", text: reasons.join("，") };
+  return { level: "low", badge: "低风险", text: reasons.join("，") };
+}
+
+function renderHoldingWarnings(items) {
+  const warningList = $("#warningList");
+  const warningCount = $("#warningCount");
+  if (!warningList || !warningCount) return;
+  warningCount.textContent = `${items.length} 只`;
+  if (!items.length) {
+    warningList.innerHTML = `<div class="warning-card"><strong>还没有持仓数据</strong><p>保存或导入持仓后，点击刷新生成预警卡。</p></div>`;
+    return;
+  }
+  warningList.innerHTML = items.map((item) => {
+    const quote = item.quote;
+    const metrics = item.metrics;
+    const risk = holdingRisk(item);
+    const marketValue = quote && item.shares ? quote.price * item.shares : null;
+    const floating = quote && item.cost && item.shares ? (quote.price - item.cost) * item.shares : null;
+    const profitPct = quote && item.cost ? ((quote.price - item.cost) / item.cost) * 100 : null;
+    const position = marketValue && item.portfolio ? (marketValue / item.portfolio) * 100 : null;
+    const riskLine = metrics?.ma20;
+    return `
+      <article class="warning-card">
+        <div class="warning-head">
+          <div>
+            <strong>${item.name}</strong>
+            <span>${item.code}${quote ? ` · 当前 ${fixed(quote.price)} · 今日 ${percent(quote.changePct)}` : " · 行情待刷新"}</span>
+          </div>
+          <b class="risk-badge ${risk.level}">${risk.badge}</b>
+        </div>
+        <div class="warning-metrics">
+          <div><span>成本价</span><strong>${item.cost || "--"}</strong></div>
+          <div><span>浮盈亏</span><strong class="${cssMove(floating || 0)}">${Number.isFinite(floating) ? `${money(floating)} / ${percent(profitPct)}` : "--"}</strong></div>
+          <div><span>仓位占比</span><strong>${Number.isFinite(position) ? `${fixed(position, 1)}%` : "--"}</strong></div>
+          <div><span>风险观察线</span><strong>${Number.isFinite(riskLine) ? `MA20 ${fixed(riskLine)}` : "--"}</strong></div>
+        </div>
+        <p class="warning-note">${risk.text}。这不是买卖建议，只是提醒你复核持仓纪律。</p>
+      </article>
+    `;
+  }).join("");
 }
 
 function updateAccount() {
@@ -731,6 +938,15 @@ function updateAccount() {
   els.profitPageText.textContent = valueTotal
     ? `当前权益 ${money(valueTotal)}，浮动盈亏 ${money(floatingProfit)}，今日 ${money(todayProfit)}。这里只做复盘统计，不替你下单。`
     : "保存持仓并刷新后，这里会汇总收益和风险。";
+  if (els.profitEquity) els.profitEquity.textContent = valueTotal ? money(valueTotal) : "¥--";
+  if (els.profitFloating) {
+    els.profitFloating.textContent = valueTotal ? money(floatingProfit) : "¥--";
+    els.profitFloating.className = cssMove(floatingProfit);
+  }
+  if (els.profitToday) {
+    els.profitToday.textContent = valueTotal ? money(todayProfit) : "¥--";
+    els.profitToday.className = cssMove(todayProfit);
+  }
   renderTodayAction(chanceCount, list.length);
 }
 
@@ -786,20 +1002,59 @@ function makeBrief() {
 }
 
 function loadSettings() {
-  els.apiBase.value = localStorage.getItem(STORAGE.apiBase) || "https://api.openai.com/v1";
-  els.apiKey.value = localStorage.getItem(STORAGE.apiKey) || "";
-  els.modelName.value = localStorage.getItem(STORAGE.model) || "gpt-4o-mini";
   els.darkModeToggle.checked = localStorage.getItem(STORAGE.dark) === "1";
   document.body.classList.toggle("dark", els.darkModeToggle.checked);
+  if (els.thoughtText) els.thoughtText.value = localStorage.getItem(STORAGE.thoughts) || "";
 }
 
 function saveSettings() {
-  localStorage.setItem(STORAGE.apiBase, els.apiBase.value.trim() || "https://api.openai.com/v1");
-  localStorage.setItem(STORAGE.apiKey, els.apiKey.value.trim());
-  localStorage.setItem(STORAGE.model, els.modelName.value.trim() || "gpt-4o-mini");
   localStorage.setItem(STORAGE.dark, els.darkModeToggle.checked ? "1" : "0");
   document.body.classList.toggle("dark", els.darkModeToggle.checked);
-  alert("已保存到本地浏览器。");
+  alert("已保存。");
+}
+
+function saveThoughts() {
+  localStorage.setItem(STORAGE.thoughts, els.thoughtText?.value || "");
+  alert("复盘笔记已保存。");
+}
+
+function exportData() {
+  const payload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    holdings: holdings(),
+    thoughts: localStorage.getItem(STORAGE.thoughts) || "",
+    dark: localStorage.getItem(STORAGE.dark) || "0"
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `stock-lab-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function restoreData() {
+  const file = els.restoreDataFile?.files?.[0];
+  if (!file) {
+    els.restoreDataFile?.click();
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(String(reader.result || "{}"));
+      if (Array.isArray(data.holdings)) setHoldings(data.holdings);
+      if (typeof data.thoughts === "string") localStorage.setItem(STORAGE.thoughts, data.thoughts);
+      if (typeof data.dark === "string") localStorage.setItem(STORAGE.dark, data.dark);
+      loadSettings();
+      alert("本地备份已恢复。");
+    } catch {
+      alert("备份文件格式不对。");
+    }
+  };
+  reader.readAsText(file, "utf-8");
 }
 
 function bindEvents() {
@@ -808,11 +1063,25 @@ function bindEvents() {
     analyze(els.stockInput.value);
   });
   on(els.refreshBtn, "click", refreshHoldings);
+  on($("#quickRefreshBtn"), "click", refreshHoldings);
   on(els.saveHoldingBtn, "click", saveHolding);
   on(els.importBtn, "click", importHoldings);
+  on(els.fileImportBtn, "click", importHoldingsFromFile);
+  on(els.importFile, "change", importHoldingsFromFile);
+  on(els.screenshotFile, "change", previewScreenshot);
+  on(els.screenshotBtn, "click", explainScreenshotImport);
   on(els.startWatchBtn, "click", startWatch);
   on(els.briefBtn, "click", makeBrief);
   on(els.saveSettingsBtn, "click", saveSettings);
+  on(els.saveThoughtBtn, "click", saveThoughts);
+  on(els.exportDataBtn, "click", exportData);
+  on(els.restoreDataBtn, "click", restoreData);
+  on(els.restoreDataFile, "change", restoreData);
+  on(els.holdingSort, "change", renderHoldings);
+  on(els.clearSearchBtn, "click", () => {
+    els.stockInput.value = "";
+    els.stockInput.focus();
+  });
   on(els.clearDataBtn, "click", () => {
     if (!confirm("确定清空本地持仓和设置吗？")) return;
     Object.values(STORAGE).forEach((key) => localStorage.removeItem(key));
@@ -833,6 +1102,20 @@ function bindEvents() {
     button.addEventListener("click", () => {
       document.querySelectorAll(".market-tabs button").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
+    });
+  });
+  document.querySelectorAll(".hot-searches button").forEach((button) => {
+    button.addEventListener("click", () => {
+      els.stockInput.value = button.dataset.code;
+      analyze(button.dataset.code);
+    });
+  });
+  document.querySelectorAll("[data-focus]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = document.getElementById(button.dataset.focus);
+      if (!target) return;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      setTimeout(() => target.focus(), 350);
     });
   });
   document.querySelectorAll(".bottom-tabs button").forEach((button) => {

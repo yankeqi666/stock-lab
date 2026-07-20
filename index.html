@@ -12,11 +12,31 @@
         <div>
           <h1>Stock Lab</h1>
           <p id="lastUpdate">尾盘纪律检查 · 等待刷新</p>
+          <div class="trust-row">
+            <span>免费可用</span>
+            <span>本地保存</span>
+            <span>不自动交易</span>
+          </div>
         </div>
         <button class="refresh-btn" id="refreshBtn" type="button">刷新</button>
       </header>
 
       <main class="page active" id="homePage">
+        <section class="panel quick-start-panel">
+          <div class="panel-title">
+            <div>
+              <h2>今天只做三件事</h2>
+              <p>不用设置 API，不用连接证券账户</p>
+            </div>
+            <span class="pill ok">简单模式</span>
+          </div>
+          <div class="quick-steps">
+            <button type="button" data-focus="stockInput"><strong>1</strong><span>查股票</span><em>输入代码或名称</em></button>
+            <button type="button" data-focus="costInput"><strong>2</strong><span>填持仓</span><em>成本和股数</em></button>
+            <button type="button" id="quickRefreshBtn"><strong>3</strong><span>看提醒</span><em>刷新风险队列</em></button>
+          </div>
+        </section>
+
         <div class="market-tabs" role="tablist" aria-label="市场筛选">
           <button class="active" type="button">全部</button>
           <button type="button">A股</button>
@@ -28,6 +48,12 @@
           <input id="stockInput" type="search" placeholder="搜索股票 / 主题" autocomplete="off" />
           <button type="submit">分析</button>
         </form>
+        <div class="hot-searches" aria-label="快捷搜索">
+          <button type="button" data-code="600519">贵州茅台</button>
+          <button type="button" data-code="300059">东方财富</button>
+          <button type="button" data-code="000001">平安银行</button>
+          <button type="button" data-code="589020">科创半导体</button>
+        </div>
 
         <section class="panel account-panel">
           <div class="panel-title">
@@ -62,6 +88,19 @@
           </div>
         </section>
 
+        <section class="panel insight-panel">
+          <div class="panel-title">
+            <div>
+              <h2>组合健康摘要</h2>
+              <p>把持仓翻译成一句能执行的话</p>
+            </div>
+            <span class="pill" id="healthPill">等待数据</span>
+          </div>
+          <div class="insight-copy" id="portfolioInsight">
+            保存或导入持仓后，这里会汇总今日最需要看的风险。
+          </div>
+        </section>
+
         <section class="panel lab-panel">
           <div class="panel-title">
             <div>
@@ -82,6 +121,15 @@
             <h2>当前持仓</h2>
             <span class="pill" id="holdingCount">0 只</span>
           </div>
+          <div class="toolbar-row">
+            <select id="holdingSort" aria-label="持仓排序">
+              <option value="risk">按风险排序</option>
+              <option value="profit">按盈亏排序</option>
+              <option value="position">按仓位排序</option>
+              <option value="name">按名称排序</option>
+            </select>
+            <button class="plain-btn" id="clearSearchBtn" type="button">清空搜索</button>
+          </div>
           <div class="holding-inputs">
             <input id="costInput" type="number" step="0.01" placeholder="成本价" />
             <input id="sharesInput" type="number" step="100" placeholder="股数" />
@@ -95,9 +143,20 @@
           </div>
           <details class="import-box">
             <summary>从券商导入持仓</summary>
-            <p>把券商软件导出的持仓表复制到这里。格式：代码,名称,成本价,股数,账户总额。数据只保存在本机浏览器。</p>
+            <p>最简单：选择券商导出的 CSV / TXT 文件，系统自动识别代码、名称、成本价、股数。数据只保存在本机浏览器。</p>
+            <input id="importFile" class="file-input" type="file" accept=".csv,.txt,text/csv,text/plain" />
+            <button class="wide-btn" id="fileImportBtn" type="button">选择文件自动导入</button>
+            <p>如果你只有 Excel：打开表格，点“另存为”，格式选 CSV，再上传。</p>
+            <p>不会上传到服务器，不读取证券账号，不需要密码。</p>
+            <div class="screenshot-import">
+              <h3>也可以上传持仓截图</h3>
+              <input id="screenshotFile" class="file-input" type="file" accept="image/*" />
+              <img id="screenshotPreview" class="screenshot-preview hidden" alt="持仓截图预览" />
+              <button class="wide-btn" id="screenshotBtn" type="button">上传截图识别</button>
+              <p id="screenshotHint">免费版先显示预览并保护隐私；自动识别需要接 OCR / 视觉模型接口。</p>
+            </div>
             <textarea id="importText" rows="5" placeholder="600519,贵州茅台,1600,100,200000&#10;300059,东方财富,18.5,1000,200000"></textarea>
-            <button class="wide-btn" id="importBtn" type="button">导入持仓</button>
+            <button class="plain-btn" id="importBtn" type="button">从粘贴内容导入</button>
           </details>
           <p class="source-line" id="refreshState">尚未刷新</p>
           <p class="brief-text hidden" id="briefText"></p>
@@ -107,6 +166,22 @@
           <div class="panel-title"><h2>风险队列</h2><span class="pill" id="riskCount">0 条</span></div>
           <div class="risk-list" id="riskList">
             <div class="risk-row"><strong>等待刷新持仓</strong><span>有持仓后会显示破位、重仓、波动过大的项目。</span></div>
+          </div>
+        </section>
+
+        <section class="panel warning-panel">
+          <div class="panel-title">
+            <div>
+              <h2>当前持仓预警机</h2>
+              <p>逐只股票检查成本、仓位、波动和风险线</p>
+            </div>
+            <span class="pill" id="warningCount">0 只</span>
+          </div>
+          <div class="warning-list" id="warningList">
+            <div class="warning-card">
+              <strong>还没有持仓数据</strong>
+              <p>保存或导入持仓后，点击刷新生成预警卡。</p>
+            </div>
           </div>
         </section>
 
@@ -146,26 +221,50 @@
         </section>
       </main>
 
-      <section class="page" id="pendingPage"><section class="panel"><h2>待定</h2><p>这里放等待回调、需确认题材、数据不足的股票。</p></section></section>
-      <section class="page" id="profitPage"><section class="panel"><h2>收益</h2><p id="profitPageText">保存持仓后会显示收益复盘。</p></section></section>
-      <section class="page" id="thinkPage"><section class="panel"><h2>思考</h2><p>记录买入理由、证伪条件、复盘结论。先写纪律，再看行情。</p></section></section>
+      <section class="page" id="pendingPage">
+        <section class="panel">
+          <div class="panel-title"><h2>待复核</h2><span class="pill" id="pendingCount">0 条</span></div>
+          <div class="risk-list" id="pendingList">
+            <div class="risk-row"><strong>暂无待复核项目</strong><span>刷新持仓后，会把中高风险项目自动放到这里。</span></div>
+          </div>
+        </section>
+      </section>
+      <section class="page" id="profitPage">
+        <section class="panel">
+          <h2>收益复盘</h2>
+          <div class="profit-board">
+            <article><span>当前权益</span><strong id="profitEquity">¥--</strong></article>
+            <article><span>浮动盈亏</span><strong id="profitFloating">¥--</strong></article>
+            <article><span>今日盈亏</span><strong id="profitToday">¥--</strong></article>
+          </div>
+          <p id="profitPageText">保存持仓后会显示收益复盘。</p>
+        </section>
+      </section>
+      <section class="page" id="thinkPage">
+        <section class="panel">
+          <h2>复盘笔记</h2>
+          <p>把买入理由、风险线、复盘结论写下来，避免临场凭情绪操作。</p>
+          <textarea id="thoughtText" class="note-area" rows="9" placeholder="例如：这只股票的买入理由是什么？什么情况说明我看错了？最大能承受多少仓位？"></textarea>
+          <button class="wide-btn" id="saveThoughtBtn" type="button">保存笔记</button>
+        </section>
+      </section>
       <section class="page" id="learnPage">
         <section class="panel settings-card">
           <h2>设置 / 学习</h2>
-          <p>API Key 只存在本机浏览器。没有 Key 时使用本地规则复盘，不编造缺失数据。</p>
-          <label for="apiBase">接口地址</label><input id="apiBase" type="url" placeholder="https://api.openai.com/v1" />
-          <label for="apiKey">API Key</label><input id="apiKey" type="password" placeholder="sk-..." />
-          <label for="modelName">模型名称</label><input id="modelName" type="text" placeholder="gpt-4o-mini" />
+          <p>Stock Lab 免费版打开就能用：不需要 API Key，不需要登录，不连接证券账户。</p>
           <label class="toggle-row"><input id="darkModeToggle" type="checkbox" /><span>深色模式</span></label>
           <button class="wide-btn" id="saveSettingsBtn" type="button">保存设置</button>
+          <button class="plain-btn" id="exportDataBtn" type="button">导出本地备份</button>
+          <input id="restoreDataFile" class="file-input" type="file" accept=".json,application/json" />
+          <button class="plain-btn" id="restoreDataBtn" type="button">恢复本地备份</button>
           <button class="danger-btn" id="clearDataBtn" type="button">清空本地数据</button>
         </section>
         <section class="panel broker-card">
           <h2>证券账户连接</h2>
           <div class="broker-grid">
             <article><strong>安全版</strong><span>券商导出持仓 CSV，你手动导入。最稳，不碰账号密码。</span></article>
-            <article><strong>专业版</strong><span>使用券商官方 QMT / PTrade / Matic 通道，在本地电脑连接。</span></article>
-            <article><strong>禁止做</strong><span>不要在网页里填券商账号密码，不做抓包登录，不代替你下单。</span></article>
+            <article><strong>不需要登录</strong><span>不用填证券账号密码，不连接真实交易账户。</span></article>
+            <article><strong>不自动交易</strong><span>这里只做复盘、整理和提醒，不下单。</span></article>
           </div>
         </section>
       </section>
