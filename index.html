@@ -1,0 +1,136 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stock Lab · AI 股票复盘工作台</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="hero-head">
+        <div>
+          <h1>Stock Lab</h1>
+          <p id="lastUpdate">尾盘纪律检查 · 等待刷新</p>
+        </div>
+        <button class="refresh-btn" id="refreshBtn" type="button">刷新</button>
+      </header>
+
+      <main class="page active" id="homePage">
+        <div class="market-tabs" role="tablist" aria-label="市场筛选">
+          <button class="active" type="button">全部</button>
+          <button type="button">A股</button>
+          <button type="button">港股</button>
+          <button type="button">美股</button>
+        </div>
+
+        <form class="search-card" id="searchForm">
+          <input id="stockInput" type="search" placeholder="搜索股票 / 主题" autocomplete="off" />
+          <button type="submit">分析</button>
+        </form>
+
+        <section class="panel account-panel">
+          <div class="panel-title">
+            <div>
+              <h2>账户概览</h2>
+              <p>A股模拟账户</p>
+            </div>
+            <span class="pill" id="disciplinePill">尾盘纪律检查</span>
+          </div>
+          <div class="account-grid">
+            <article><span>权益</span><strong id="equityValue">¥--</strong><em id="yieldValue">收益率 --</em></article>
+            <article><span>今日</span><strong id="todayValue" class="num-red">¥--</strong><em>按持仓最新价</em></article>
+            <article><span>浮盈亏</span><strong id="profitValue" class="num-red">¥--</strong><em>未实现盈亏</em></article>
+            <article><span>机会</span><strong id="chanceValue">0/0</strong><em>主动交易批次</em></article>
+          </div>
+        </section>
+
+        <section class="panel action-panel">
+          <div class="panel-title">
+            <div>
+              <h2>今日动作</h2>
+              <p>先看纪律，再看可跟候选</p>
+            </div>
+            <span class="pill ok" id="actionStatus">纪律正常</span>
+          </div>
+          <div class="action-copy" id="todayAction">
+            <strong>先添加持仓或搜索股票，系统会生成今日观察动作。</strong>
+            <ul>
+              <li>不追涨，不凭感觉加仓。</li>
+              <li>先确认成本、仓位和风险线。</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="panel holdings-panel">
+          <div class="panel-title">
+            <h2>当前持仓</h2>
+            <span class="pill" id="holdingCount">0 只</span>
+          </div>
+          <div class="holding-inputs">
+            <input id="costInput" type="number" step="0.01" placeholder="成本价" />
+            <input id="sharesInput" type="number" step="100" placeholder="股数" />
+            <input id="portfolioInput" type="number" step="1000" placeholder="账户总额" />
+            <button id="saveHoldingBtn" type="button">保存</button>
+          </div>
+          <div class="holding-list" id="holdingList"></div>
+        </section>
+
+        <section class="panel score-panel hidden" id="scorePanel">
+          <div class="score-wrap">
+            <div class="gauge" id="gauge" style="--score: 0"><strong id="scoreNum">--</strong><span id="scoreMood">等待</span></div>
+            <div class="score-copy">
+              <h2 id="scoreTitle">AI 评分卡</h2>
+              <div class="chips" id="scoreChips"></div>
+              <p id="scoreText">搜索后展示趋势、技术、风险和明日观察位。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel strategy-panel hidden" id="strategyPanel">
+          <div class="panel-title"><h2>策略点位</h2><span class="pill">狙击点位</span></div>
+          <div class="strategy-grid" id="strategyGrid"></div>
+        </section>
+
+        <section class="panel chart-panel hidden" id="chartPanel">
+          <div class="panel-title">
+            <div><h2>K线与技术指标</h2><p>MA5/10/20、成交量、MACD、RSI</p></div>
+            <span class="pill">日线</span>
+          </div>
+          <canvas id="chartCanvas" width="720" height="640" aria-label="K线和技术指标图"></canvas>
+        </section>
+
+        <section class="panel report-panel hidden" id="reportPanel">
+          <div class="panel-title"><h2>AI 个股复盘</h2><span class="pill" id="reportLabel">观察</span></div>
+          <div class="report-body" id="reportBody"></div>
+        </section>
+      </main>
+
+      <section class="page" id="pendingPage"><section class="panel"><h2>待定</h2><p>这里放等待回调、需确认题材、数据不足的股票。</p></section></section>
+      <section class="page" id="profitPage"><section class="panel"><h2>收益</h2><p id="profitPageText">保存持仓后会显示收益复盘。</p></section></section>
+      <section class="page" id="thinkPage"><section class="panel"><h2>思考</h2><p>记录买入理由、证伪条件、复盘结论。先写纪律，再看行情。</p></section></section>
+      <section class="page" id="learnPage">
+        <section class="panel settings-card">
+          <h2>设置 / 学习</h2>
+          <p>API Key 只存在本机浏览器。没有 Key 时使用本地规则复盘，不编造缺失数据。</p>
+          <label for="apiBase">接口地址</label><input id="apiBase" type="url" placeholder="https://api.openai.com/v1" />
+          <label for="apiKey">API Key</label><input id="apiKey" type="password" placeholder="sk-..." />
+          <label for="modelName">模型名称</label><input id="modelName" type="text" placeholder="gpt-4o-mini" />
+          <label class="toggle-row"><input id="darkModeToggle" type="checkbox" /><span>深色模式</span></label>
+          <button class="wide-btn" id="saveSettingsBtn" type="button">保存设置</button>
+          <button class="danger-btn" id="clearDataBtn" type="button">清空本地数据</button>
+        </section>
+      </section>
+
+      <footer class="disclaimer">仅供学习和复盘，不构成投资建议，不保证收益。股市有风险，投资需谨慎。</footer>
+      <nav class="bottom-tabs">
+        <button class="active" type="button" data-tab="homePage">主页</button>
+        <button type="button" data-tab="pendingPage">待定</button>
+        <button type="button" data-tab="profitPage">收益</button>
+        <button type="button" data-tab="thinkPage">思考</button>
+        <button type="button" data-tab="learnPage">学习</button>
+      </nav>
+    </div>
+    <script src="script.js"></script>
+  </body>
+</html>
