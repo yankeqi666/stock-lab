@@ -451,6 +451,31 @@ body.dark .warning-metrics div { background: #111827; }
   color: var(--muted);
   line-height: 1.7;
 }
+.plan-box {
+  margin-top: 14px;
+  padding: 16px;
+  border-radius: 16px;
+  background: #0f172a;
+  color: #fff;
+}
+body.dark .plan-box { background: #172033; }
+.plan-box span {
+  display: block;
+  color: #93c5fd;
+  font-size: 15px;
+  font-weight: 900;
+}
+.plan-box strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 24px;
+  font-weight: 950;
+}
+.plan-box p {
+  margin: 8px 0 0;
+  color: #dbeafe;
+  line-height: 1.65;
+}
 
 .score-wrap { display: grid; grid-template-columns: 170px 1fr; gap: 22px; align-items: center; }
 .gauge {

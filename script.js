@@ -1,4 +1,4 @@
-const STORAGE = {
+﻿const STORAGE = {
   holdings: "stock_lab_holdings",
   thoughts: "stock_lab_thoughts",
   dark: "stock_lab_dark"
@@ -810,33 +810,30 @@ function renderRiskQueue(items) {
     if (!quote || !item.shares) return;
     const marketValue = quote.price * item.shares;
     const position = item.portfolio ? (marketValue / item.portfolio) * 100 : null;
-    const floating = item.cost ? (quote.price - item.cost) * item.shares : null;
     if (Number.isFinite(position)) exposure += position;
-    if (Number.isFinite(position) && position > 35) {
-      rows.push({ level: "hot", title: `${item.name} 仓位偏重`, text: `单只仓位约 ${fixed(position, 1)}%，先确认是否超过家庭账户承受范围。` });
-    }
-    if (Math.abs(quote.changePct) >= 3) {
-      rows.push({ level: "warn", title: `${item.name} 今日波动较大`, text: `今日涨跌 ${percent(quote.changePct)}，先看风险观察线，不凭情绪操作。` });
-    }
-    if (Number.isFinite(floating) && floating < 0) {
-      rows.push({ level: "warn", title: `${item.name} 处于浮亏`, text: `浮亏约 ${money(Math.abs(floating))}，复核买入理由和止损纪律。` });
-    }
+    const risk = holdingRisk(item);
+    if (risk.level === "low") return;
+    const plan = holdingPlan(item, risk);
+    rows.push({
+      level: risk.level === "high" ? "hot" : "warn",
+      title: `${item.name}：${plan.label}`,
+      text: plan.text
+    });
   });
   if (riskExposure) riskExposure.textContent = items.length ? `${fixed(exposure, 0)}%` : "--";
   if (disciplineQueue) disciplineQueue.textContent = rows.length;
   riskCount.textContent = `${rows.length} 条`;
   riskList.innerHTML = rows.length
     ? rows.slice(0, 6).map((row) => `<div class="risk-row ${row.level}"><strong>${row.title}</strong><span>${row.text}</span></div>`).join("")
-    : `<div class="risk-row"><strong>暂无明显风险项</strong><span>没有识别到重仓、剧烈波动或浮亏项。仍需以券商和公告数据为准。</span></div>`;
+    : `<div class="risk-row"><strong>暂无需要优先处理的持仓</strong><span>没有识别到需要立刻降风险的组合矛盾。继续按计划观察，不代表没有风险。</span></div>`;
   if (els.pendingCount) els.pendingCount.textContent = `${rows.length} 条`;
   if (els.pendingList) {
     els.pendingList.innerHTML = rows.length
       ? rows.map((row) => `<div class="risk-row ${row.level}"><strong>${row.title}</strong><span>${row.text}</span></div>`).join("")
-      : `<div class="risk-row"><strong>暂无待复核项目</strong><span>刷新持仓后，会把中高风险项目自动放到这里。</span></div>`;
+      : `<div class="risk-row"><strong>暂无待复核项目</strong><span>刷新持仓后，会把真正需要优先处理的持仓放到这里。</span></div>`;
   }
   renderPortfolioInsight(items, rows);
 }
-
 function renderPortfolioInsight(items, risks) {
   if (!els.portfolioInsight || !els.healthPill) return;
   if (!items.length) {
@@ -903,7 +900,7 @@ async function refreshHoldings() {
 function holdingRisk(item) {
   const quote = item.quote;
   const metrics = item.metrics;
-  if (!quote) return { level: "mid", text: "行情读取失败，暂时无法判断。", badge: "待确认" };
+  if (!quote) return { level: "mid", text: "行情读取失败，暂时无法判断。", badge: "待确认", facts: {} };
   const marketValue = item.shares ? quote.price * item.shares : 0;
   const position = item.portfolio ? (marketValue / item.portfolio) * 100 : null;
   const profitPct = item.cost ? ((quote.price - item.cost) / item.cost) * 100 : null;
@@ -934,9 +931,92 @@ function holdingRisk(item) {
     reasons.push("短线偏热");
   }
   if (!reasons.length) reasons.push("暂无明显异常");
-  if (points >= 4) return { level: "high", badge: "高风险", text: reasons.join("，") };
-  if (points >= 2) return { level: "mid", badge: "中风险", text: reasons.join("，") };
-  return { level: "low", badge: "低风险", text: reasons.join("，") };
+  const facts = { position, profitPct, belowRiskLine, dayChange: quote.changePct, rsi: metrics?.rsi, ma20: metrics?.ma20, high60: metrics?.high60, ma10: metrics?.ma10 };
+  if (points >= 4) return { level: "high", badge: "高风险", text: reasons.join("，"), facts };
+  if (points >= 2) return { level: "mid", badge: "中风险", text: reasons.join("，"), facts };
+  return { level: "low", badge: "低风险", text: reasons.join("，"), facts };
+}
+
+function holdingPlan(item, risk) {
+  const quote = item.quote;
+  const metrics = item.metrics;
+  if (!quote) {
+    return {
+      label: "先等数据",
+      text: "行情没有读到，不要凭旧价格做判断，先刷新或换数据源核对。"
+    };
+  }
+  const marketValue = item.shares ? quote.price * item.shares : 0;
+  const position = item.portfolio ? (marketValue / item.portfolio) * 100 : null;
+  const profitPct = item.cost ? ((quote.price - item.cost) / item.cost) * 100 : null;
+  const aboveMa20 = metrics?.ma20 ? quote.price >= metrics.ma20 : null;
+  const nearPressure = metrics?.high60 ? quote.price >= metrics.high60 * 0.97 : false;
+  const strongRebound = quote.changePct >= 4;
+  const heavy = Number.isFinite(position) && position >= 50;
+  const loss = Number.isFinite(profitPct) && profitPct < 0;
+  const deepLoss = Number.isFinite(profitPct) && profitPct <= -8;
+
+  if (heavy && loss && strongRebound) {
+    return {
+      label: "借反弹降风险",
+      text: `这只的核心矛盾是：仓位已经很重（${fixed(position, 1)}%），今天虽然大涨 ${percent(quote.changePct)}，但你的账户仍是浮亏 ${percent(profitPct)}。这说明不是“机会来了”，而是前面买入成本和仓位压力还没解决。更合理的规划是把今天的反弹当作重新整理仓位的窗口：先停止继续加仓，设定一个你能接受的单只仓位上限；如果价格接近成本或压力位，优先考虑把仓位降回安全范围，而不是因为一天大涨就继续赌。`
+    };
+  }
+
+  if (heavy && strongRebound) {
+    return {
+      label: "重仓反弹复核",
+      text: `今天涨幅 ${percent(quote.changePct)}，短线情绪变强，但单只仓位约 ${fixed(position, 1)}%，组合风险仍集中。规划上不要把上涨自动理解成可以买更多，应该先看是否接近压力位 ${metrics?.high60 ? fixed(metrics.high60) : "--"}，并提前写好如果冲高回落要怎么处理。`
+    };
+  }
+
+  if (heavy && loss) {
+    return {
+      label: "先处理重仓亏损",
+      text: `这只同时满足重仓和浮亏，问题优先级高于普通波动。现在最重要的不是猜明天涨跌，而是把“还能承受多少亏损”和“跌破哪条线就承认看错”写清楚。没有重新站稳风险线前，不建议继续摊低成本。`
+    };
+  }
+
+  if (risk.level === "high") {
+    return {
+      label: "优先降风险",
+      text: `这只已经进入高风险队列。后续规划要先做减法：暂停新增投入，检查 ${metrics?.ma20 ? fixed(metrics.ma20) : "MA20"} 这条风险观察线是否有效；如果仓位超过自己原计划，先把仓位拉回计划内，再谈继续观察。`
+    };
+  }
+  if (Number.isFinite(profitPct) && profitPct <= -8) {
+    return {
+      label: "暂停补仓",
+      text: `当前距离成本 ${percent(profitPct)}，已经不是小波动。规划上先暂停补仓，把买入理由重新写一遍：如果理由只剩“亏了不想卖”，那就是风险；如果基本面和技术线都还支持，再考虑继续观察。`
+    };
+  }
+  if (Number.isFinite(position) && position > 35) {
+    return {
+      label: "控制仓位",
+      text: "单只仓位偏重，后续规划先以降低组合波动为主，不把更多资金继续集中到这一只。"
+    };
+  }
+  if (Number.isFinite(profitPct) && profitPct >= 12 && nearPressure) {
+    return {
+      label: "分批兑现复核",
+      text: "已有较明显浮盈且接近上方压力区，建议把分批兑现计划拿出来复核，而不是只盯着还能不能继续涨。"
+    };
+  }
+  if (aboveMa20 === false) {
+    return {
+      label: "破线观察",
+      text: "价格在 MA20 风险观察线下方，先不要急着加仓，重点看能否重新站回观察线。"
+    };
+  }
+  if (metrics?.ma10 && quote.price > metrics.ma10 * 1.08) {
+    return {
+      label: "等待回踩",
+      text: "短线离均线偏远，空仓不要追，已持有也先看量能和回踩承接。"
+    };
+  }
+  return {
+    label: "继续持有观察",
+    text: `当前没有明显破坏纪律的信号。后续规划是：继续盯成本价 ${item.cost || "--"}、风险线 ${metrics?.ma20 ? fixed(metrics.ma20) : "--"} 和仓位比例 ${Number.isFinite(position) ? `${fixed(position, 1)}%` : "--"}，不因为单日波动改计划。`
+  };
 }
 
 function renderHoldingWarnings(items) {
@@ -952,6 +1032,7 @@ function renderHoldingWarnings(items) {
     const quote = item.quote;
     const metrics = item.metrics;
     const risk = holdingRisk(item);
+    const plan = holdingPlan(item, risk);
     const marketValue = quote && item.shares ? quote.price * item.shares : null;
     const floating = quote && item.cost && item.shares ? (quote.price - item.cost) * item.shares : null;
     const profitPct = quote && item.cost ? ((quote.price - item.cost) / item.cost) * 100 : null;
@@ -971,6 +1052,11 @@ function renderHoldingWarnings(items) {
           <div><span>浮盈亏</span><strong class="${cssMove(floating || 0)}">${Number.isFinite(floating) ? `${money(floating)} / ${percent(profitPct)}` : "--"}</strong></div>
           <div><span>仓位占比</span><strong>${Number.isFinite(position) ? `${fixed(position, 1)}%` : "--"}</strong></div>
           <div><span>风险观察线</span><strong>${Number.isFinite(riskLine) ? `MA20 ${fixed(riskLine)}` : "--"}</strong></div>
+        </div>
+        <div class="plan-box">
+          <span>当前建议</span>
+          <strong>${plan.label}</strong>
+          <p>${plan.text}</p>
         </div>
         <p class="warning-note">${risk.text}。先复核原因和仓位，不要凭当天情绪操作。</p>
       </article>
@@ -1097,13 +1183,23 @@ function makeCloseReview() {
   }, 0);
   const topRisks = [...high, ...mid].slice(0, 4);
   const tomorrow = topRisks.length
-    ? topRisks.map(({ item, risk }) => `<li>${item.name}：${risk.text}</li>`).join("")
+    ? topRisks.map(({ item, risk }) => {
+      const plan = holdingPlan(item, risk);
+      return `<li>${item.name}：${plan.label}。${plan.text}</li>`;
+    }).join("")
     : "<li>没有明显高风险项，继续按原计划观察。</li>";
+  const portfolioPlan = high.length
+    ? "组合建议：先处理高风险持仓，暂停新增交易，把资金暴露降到自己睡得着的范围。"
+    : mid.length
+      ? "组合建议：今天不急着扩大仓位，先复核中风险持仓的成本、风险线和仓位。"
+      : "组合建议：组合暂时平稳，可以继续按计划观察，但不要因为平稳就随意加仓。";
   if (els.autoReview) {
     els.autoReview.innerHTML = `
       <strong>今日组合状态</strong>
       当前持仓 ${items.length} 只，估算市值 ${money(totalValue)}，今日盈亏 ${money(todayProfit)}。
       高风险 ${high.length} 只，中风险 ${mid.length} 只。
+      <strong>当前规划建议</strong>
+      ${portfolioPlan}
       <strong>明日优先观察</strong>
       <ul>${tomorrow}</ul>
       <strong>纪律提醒</strong>
@@ -1270,3 +1366,4 @@ bindEvents();
 loadSettings();
 renderHoldings();
 updateAccount();
+
