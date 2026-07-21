@@ -559,6 +559,30 @@ body.dark .strategy-card { background: #0b1220; }
 .source-line { color: var(--muted); font-size: 15px; }
 .report-body { display: grid; gap: 14px; margin-top: 16px; }
 .report-section, .conclusion-block { padding: 18px; border-radius: 16px; border: 1px solid var(--line); background: #fbfdff; line-height: 1.8; font-size: 17px; }
+.pro-summary {
+  border-color: #9cc8ef;
+  background: linear-gradient(180deg, #f3f9ff, #ffffff);
+}
+.stance-line {
+  margin: 10px 0 12px;
+  padding: 14px;
+  border-radius: 14px;
+  color: #0f172a;
+  background: #eaf4ff;
+  border: 1px solid #cfe4fb;
+  font-weight: 800;
+}
+.stance-line span {
+  display: inline-block;
+  margin-right: 10px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  color: #fff;
+  background: #2563eb;
+  font-weight: 950;
+}
+body.dark .pro-summary { background: #0b1220; border-color: #1d4ed8; }
+body.dark .stance-line { color: #dbeafe; background: #0f1f38; border-color: #1e3a8a; }
 body.dark .report-section, body.dark .conclusion-block { background: #0b1220; }
 .conclusion-block { background: #fff7ed; color: #7c2d12; }
 .settings-card { display: grid; gap: 12px; }

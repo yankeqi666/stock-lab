@@ -545,36 +545,66 @@ function renderNews(news) {
     : "<li>暂无可展示消息。</li>";
 }
 
+function localExpertConclusion(stock, metrics) {
+  const state = trend(metrics);
+  const nearPressure = Number.isFinite(metrics.high60) && stock.price >= metrics.high60 * 0.97;
+  const broken = Number.isFinite(metrics.ma20) && stock.price < metrics.ma20;
+  const hot = metrics.rsi > 72 || nearPressure;
+  if (broken) {
+    return `核心判断：这只现在先按风险处理，不按机会处理。价格低于 MA20 风险观察线 ${fixed(metrics.ma20)}，如果不能重新站回，原先的持有逻辑要降级。`;
+  }
+  if (hot) {
+    return `核心判断：短线偏热，适合复核，不适合凭当天上涨追。当前位置接近压力或 RSI 偏高，后面要看放量突破是否真实。`;
+  }
+  if (state === "均线多头" && stock.changePct >= 0) {
+    return `核心判断：走势暂时健康，但还没到可以放松纪律的程度。均线结构偏强，下一步看资金和量能能否继续配合。`;
+  }
+  return `核心判断：当前更像震荡观察，既不是强机会，也不是必须回避。重点看 ${fixed(metrics.ma20)} 是否守住，以及 ${fixed(metrics.high60)} 附近能否突破。`;
+}
+
+function localVolumeText(stock, metrics) {
+  if (!Number.isFinite(metrics.volumeRatio)) return "量能数据不足，不能确认资金态度。";
+  if (metrics.volumeRatio >= 1.8 && stock.changePct > 0) return "放量上涨，说明短线资金愿意推，但如果靠近压力位，也可能出现冲高回落。";
+  if (metrics.volumeRatio >= 1.8 && stock.changePct < 0) return "放量下跌，说明抛压扩大，要优先看风险观察线。";
+  if (metrics.volumeRatio <= 0.75) return "缩量，说明主动交易意愿不强，适合等待确认。";
+  return "量能正常，暂时没有形成强验证。";
+}
+
 function renderReport(stock, metrics, news) {
   const label = conclusionLabel(stock, metrics);
+  const conclusion = localExpertConclusion(stock, metrics);
+  const volumeText = localVolumeText(stock, metrics);
   els.reportPanel.classList.remove("hidden");
   els.reportLabel.textContent = label;
   els.reportBody.innerHTML = `
+    <section class="report-section pro-summary">
+      <strong>核心判断</strong><br>
+      ${conclusion}
+    </section>
     <section class="report-section">
       <strong>当前仓位建议</strong><br>
-      本工具不替你下买卖决定，只给仓位纪律检查：如果已经持有，优先看价格是否守住 ${fixed(metrics.ma20)} 附近；如果仓位已经很重，先避免因为短线波动继续加码；如果没有持仓，先把 ${fixed(metrics.ma10)} / ${fixed(metrics.ma20)} 当观察区。
+      已持有：先看 ${fixed(metrics.ma20)} 是否守住，跌破并放量就把风险级别上调。空仓：不要追当天大涨，等 ${fixed(metrics.ma10)} / ${fixed(metrics.ma20)} 附近回踩后看缩量企稳。重仓：先控制单只仓位，再谈继续观察。
     </section>
     <section class="report-section">
       <strong>一、周期框架</strong><br>
-      约束：仅有行情和K线数据，行业产能、政策、库存数据不足，暂无法完整判断。<br>
-      惯性：${trend(metrics)}，近20日 ${percent(metrics.ret20)}，量能约为20日均量的 ${fixed(metrics.volumeRatio, 2)} 倍。<br>
-      阶段：${metrics.rsi > 72 ? "短线偏热，追高风险升高。" : "暂未出现极端过热信号。"}
+      行业和财务数据在本地兜底模式下不足，周期判断降级。能确认的是价格惯性：${trend(metrics)}，近20日 ${percent(metrics.ret20)}，近60日 ${percent(metrics.ret60)}。如果只靠价格上涨，没有公告、财报和资金流验证，不能把它当成完整周期机会。
     </section>
     <section class="report-section">
       <strong>二、K线执行框架</strong><br>
       趋势判断：${trend(metrics)}。<br>
       关键位置：支撑 ${fixed(metrics.ma20)} / 压力 ${fixed(metrics.high60)}。<br>
-      风险信号：${metrics.drawdown60 < -20 ? `近60日最大回撤 ${percent(metrics.drawdown60)}，波动偏大。` : "暂未看到大幅回撤信号。"}
+      量价配合：${volumeText}<br>
+      反证条件：跌破 ${fixed(metrics.ma20)} 且放量，说明中期纪律被破坏；冲到 ${fixed(metrics.high60)} 附近但量能跟不上，说明上方抛压仍重。
     </section>
     <section class="report-section">
       <strong>三、交叉验证</strong><br>
       行情：来自东方财富公开行情接口。<br>
       K线：来自东方财富历史K线接口。<br>
-      消息：抓取到 ${news.length} 条公开标题，资金流、龙虎榜、财报和公告原文需要接入正式数据源后再确认。
+      消息：抓取到 ${news.length} 条公开标题。资金流、龙虎榜、财报和公告原文在本地兜底模式下不足，因此结论置信度降低。
     </section>
     <section class="conclusion-block">
       <strong>标签：${label}</strong><br>
-      核心逻辑：先看纪律线，再看量价是否配合，不预测明天涨跌。<br>
+      核心逻辑：先看纪律线，再看量价是否配合，再看消息和财报是否验证。<br>
       风险提示：公开免费接口可能延迟或失败，实际决策请以交易所公告和券商软件为准。
     </section>
   `;
@@ -625,6 +655,7 @@ function renderCloudAnalysis(data) {
   els.reportPanel.classList.remove("hidden");
   els.reportLabel.textContent = data.label;
   els.reportBody.innerHTML = `
+    <section class="report-section pro-summary"><strong>专业复盘结论</strong><br>${professionalSummary(data)}</section>
     <section class="report-section"><strong>当前仓位建议</strong><br>${data.report.position}</section>
     <section class="report-section"><strong>建议置信度</strong><br>${stockConfidenceSection(data)}</section>
     <section class="report-section"><strong>市场背景</strong><br>${data.report.market || "指数快照未取到，本次市场背景判断降级。"}</section>
@@ -674,6 +705,66 @@ function stockConfidenceSection(data) {
     当前建议置信度：${confidence}。<br>
     <b>依据：</b><ul>${evidence.map((item) => `<li>${item}</li>`).join("")}</ul>
     <b>缺失：</b><ul>${missing.slice(0, 5).map((item) => `<li>${item}</li>`).join("")}</ul>
+  `;
+}
+
+function professionalSummary(data) {
+  const stock = data.quote || {};
+  const metrics = data.metrics || {};
+  const market = data.market || marketSnapshot;
+  const price = Number(stock.price);
+  const ma20 = Number(metrics.ma20);
+  const ma10 = Number(metrics.ma10);
+  const high60 = Number(metrics.high60);
+  const rsi = Number(metrics.rsi);
+  const volumeRatio = Number(metrics.volumeRatio);
+  const mainFlow = Number(stock.mainNetInflow);
+  const state = trend(metrics);
+  const broken = Number.isFinite(price) && Number.isFinite(ma20) && price < ma20;
+  const nearPressure = Number.isFinite(price) && Number.isFinite(high60) && price >= high60 * 0.97;
+  const hot = Number.isFinite(rsi) && rsi >= 72;
+  const strongMoney = Number.isFinite(mainFlow) && mainFlow > 0;
+  const weakMoney = Number.isFinite(mainFlow) && mainFlow < 0;
+  let stance = "震荡等待";
+  let verdict = "方向不够清楚，先等关键位置给答案。";
+  if (broken) {
+    stance = "偏弱防守";
+    verdict = `价格已经低于 MA20 ${fixed(ma20)}，当前重点不是找机会，而是确认风险有没有继续扩大。`;
+  } else if (hot && nearPressure) {
+    stance = "高位复核";
+    verdict = `短线热度偏高，并且靠近60日压力 ${fixed(high60)}，这里更适合复核仓位和兑现纪律，不适合情绪追高。`;
+  } else if (state === "均线多头" && strongMoney && market?.mood !== "市场偏弱") {
+    stance = "偏强观察";
+    verdict = `趋势和资金暂时配合，属于可以继续观察强度的状态，但仍要看 ${fixed(high60)} 附近能否有效突破。`;
+  } else if (state === "均线多头") {
+    stance = "趋势观察";
+    verdict = `均线结构偏强，但资金或市场背景验证还不够，不能直接升级成强机会。`;
+  } else if (market?.mood === "市场偏弱") {
+    stance = "弱市谨慎";
+    verdict = "市场背景偏弱，个股即使反弹也先按修复看，重仓和破线项优先处理。";
+  }
+  const evidence = [
+    `趋势：${state}，近20日 ${percent(metrics.ret20)}，近60日 ${percent(metrics.ret60)}。`,
+    `位置：MA10 ${fixed(ma10)}，MA20 ${fixed(ma20)}，60日压力 ${fixed(high60)}，当前价 ${fixed(price)}。`,
+    `量能：${Number.isFinite(volumeRatio) ? `${fixed(volumeRatio, 2)} 倍20日均量` : "未取到"}；RSI ${fixed(rsi, 0)}。`,
+    Number.isFinite(mainFlow) ? `资金：当日主力净流入 ${formatWanYi(mainFlow)}，占比 ${fixed(stock.mainNetInflowPct, 2)}%。` : "资金：未取到当日主力资金。",
+    market ? `市场：${market.mood}，主要指数平均 ${percent(market.avgChange)}。` : "市场：未取到指数背景。"
+  ];
+  const counter = broken
+    ? `反证条件：如果重新站回 MA20 ${fixed(ma20)}，并且量能不萎缩，偏弱判断可以降级为修复观察。`
+    : `反证条件：如果跌破 MA20 ${fixed(ma20)} 且放量，原有观察逻辑降级；如果冲到 ${fixed(high60)} 附近但量能跟不上，说明压力仍重。`;
+  const action = broken
+    ? "规划：持有者先控制风险和仓位，空仓者等待重新站回风险线后再观察。"
+    : nearPressure || hot
+      ? "规划：持有者优先复核是否分批兑现或降低仓位，空仓者不追高。"
+      : weakMoney
+        ? "规划：价格没破线但资金偏谨慎，先观察资金是否连续转正。"
+        : "规划：继续观察关键线，不因为单日涨跌临时改变计划。";
+  return `
+    <div class="stance-line"><span>${stance}</span>${verdict}</div>
+    <ul>${evidence.map((item) => `<li>${item}</li>`).join("")}</ul>
+    <p><b>${counter}</b></p>
+    <p><b>${action}</b></p>
   `;
 }
 
