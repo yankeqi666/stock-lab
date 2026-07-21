@@ -1,4 +1,4 @@
-const aliases = {
+﻿const aliases = {
   "贵州茅台": "600519",
   "茅台": "600519",
   "五粮液": "000858",
@@ -26,18 +26,29 @@ async function handle(input) {
     const quote = await fetchQuote(input);
     const rows = await fetchHistory(quote.code);
     const metrics = calcMetrics(rows);
-    const news = await fetchNews(quote);
-    const validation = validateData(quote, metrics, news);
+    const [news, announcements, finance, moneyFlow, market] = await Promise.all([
+      fetchNews(quote),
+      fetchAnnouncements(quote),
+      fetchFinance(quote),
+      fetchMoneyFlowHistory(quote),
+      fetchMarketSnapshot()
+    ]);
+    const extra = { announcements, finance, moneyFlow, market };
+    const validation = validateData(quote, metrics, news, extra);
     const payload = {
       quote,
       metrics,
       news,
+      announcements,
+      finance,
+      moneyFlow,
+      market,
       validation,
       score: scoreOf(quote, metrics),
       label: labelFor(quote, metrics),
       strategy: strategyCards(metrics),
       backtest: backtest(rows),
-      report: buildReport(quote, metrics, news, validation),
+      report: buildReport(quote, metrics, news, validation, extra),
       updatedAt: new Date().toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" })
     };
     return json(payload);
@@ -81,7 +92,7 @@ async function eastmoney(url) {
 async function fetchQuote(input) {
   const code = normalize(input);
   if (!code) throw new Error("请输入股票代码或名称");
-  const fields = "f57,f58,f43,f44,f45,f46,f47,f48,f60,f116,f162,f170,f62,f184";
+  const fields = "f57,f58,f43,f44,f45,f46,f47,f48,f60,f116,f162,f170,f62,f184,f127,f128,f129";
   const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${encodeURIComponent(secid(code))}&fields=${fields}`;
   const data = (await eastmoney(url)).data;
   if (!data || data.f43 === "-") throw new Error("没有找到这只股票");
@@ -100,6 +111,7 @@ async function fetchQuote(input) {
     pe: num(data.f162) / 100,
     mainNetInflow: num(data.f62),
     mainNetInflowPct: num(data.f184),
+    industry: data.f127 || data.f128 || data.f129 || "",
     source: "东方财富公开行情接口",
     updatedAt: new Date().toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" })
   };
@@ -129,38 +141,187 @@ async function fetchNews(quote) {
   }
 }
 
-function validateData(quote, metrics, news) {
+async function fetchAnnouncements(quote) {
+  try {
+    const keyword = encodeURIComponent(`${quote.name} ${quote.code} 公告 财报`);
+    const url = `https://search-api-web.eastmoney.com/search/jsonp?cb=callback&param=${keyword}`;
+    const text = await (await fetch(url, {
+      headers: {
+        "user-agent": "Mozilla/5.0 StockLab/1.0",
+        "referer": "https://www.eastmoney.com/"
+      }
+    })).text();
+    const match = text.match(/callback\((.*)\)$/);
+    if (!match) return [];
+    const data = JSON.parse(match[1]);
+    const list = data?.result?.cmsArticleWebOld || data?.result?.cmsArticle || [];
+    return list
+      .filter((item) => /公告|财报|年报|季报|中报|业绩|分红|减持|增持|回购|诉讼|处罚/.test(item.title || item.Title || ""))
+      .slice(0, 6)
+      .map((item) => ({
+        title: item.title || item.Title || "未命名公告线索",
+        date: item.showTime || item.publishTime || item.date || "",
+        source: "东方财富公告/资讯搜索"
+      }));
+  } catch {
+    return [];
+  }
+}
+
+async function fetchFinance(quote) {
+  try {
+    const filter = encodeURIComponent(`(SECURITY_CODE="${quote.code}")`);
+    const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_LICO_FN_CPD&columns=ALL&filter=${filter}&pageNumber=1&pageSize=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB`;
+    const data = await eastmoney(url);
+    const row = data?.result?.data?.[0];
+    if (!row) return null;
+    return {
+      reportDate: row.REPORT_DATE || row.REPORTDATE || row.DATE || "",
+      revenue: num(row.TOTAL_OPERATE_INCOME || row.OPERATE_INCOME || row.BASIC_EPS),
+      netProfit: num(row.PARENT_NETPROFIT || row.NETPROFIT || row.DEDUCT_PARENT_NETPROFIT),
+      revenueYoY: num(row.TOTAL_OPERATE_INCOME_YOY || row.OPERATE_INCOME_YOY),
+      profitYoY: num(row.PARENT_NETPROFIT_YOY || row.NETPROFIT_YOY),
+      roe: num(row.WEIGHTAVG_ROE || row.ROE),
+      source: "东方财富数据中心财务摘要"
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchMoneyFlowHistory(quote) {
+  try {
+    const fields1 = "f1,f2,f3,f7";
+    const fields2 = "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63";
+    const url = `https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?secid=${encodeURIComponent(secid(quote.code))}&lmt=8&klt=101&fields1=${fields1}&fields2=${fields2}`;
+    const rows = (await eastmoney(url)).data?.klines || [];
+    return rows.map((line) => {
+      const parts = line.split(",");
+      return {
+        date: parts[0],
+        mainNetInflow: num(parts[1]),
+        smallNetInflow: num(parts[5]),
+        source: "东方财富历史资金流"
+      };
+    }).filter((item) => item.date);
+  } catch {
+    return [];
+  }
+}
+
+async function fetchMarketSnapshot() {
+  const indexes = [
+    { code: "1.000001", name: "上证指数" },
+    { code: "0.399001", name: "深证成指" },
+    { code: "0.399006", name: "创业板指" },
+    { code: "1.000688", name: "科创50" }
+  ];
+  const results = await Promise.all(indexes.map(async (item) => {
+    try {
+      const fields = "f57,f58,f43,f44,f45,f46,f60,f170,f47,f48";
+      const data = (await eastmoney(`https://push2.eastmoney.com/api/qt/stock/get?secid=${encodeURIComponent(item.code)}&fields=${fields}`)).data;
+      return {
+        code: data?.f57 || item.code,
+        name: data?.f58 || item.name,
+        price: num(data?.f43) / 100,
+        changePct: num(data?.f170) / 100,
+        amount: num(data?.f48),
+        source: "东方财富指数行情"
+      };
+    } catch {
+      return { ...item, price: NaN, changePct: NaN, amount: NaN, source: "东方财富指数行情" };
+    }
+  }));
+  const valid = results.filter((item) => Number.isFinite(item.changePct));
+  const avgChange = avg(valid.map((item) => item.changePct));
+  const strongCount = valid.filter((item) => item.changePct >= 0.5).length;
+  const weakCount = valid.filter((item) => item.changePct <= -0.5).length;
+  const mood = !valid.length
+    ? "数据不足"
+    : strongCount >= 3
+      ? "市场偏强"
+      : weakCount >= 3
+        ? "市场偏弱"
+        : "市场震荡";
+  const discipline = mood === "市场偏弱"
+    ? "市场背景偏弱时，个股反弹更要看是否放量站稳，重仓不宜把单日上涨当作趋势反转。"
+    : mood === "市场偏强"
+      ? "市场背景偏强时，个股上涨需要区分是大盘带动还是自身逻辑改善，接近压力位仍要看量能。"
+      : mood === "市场震荡"
+        ? "市场震荡时，纪律线比情绪更重要，优先处理破线和重仓项。"
+        : "指数数据未取到，本轮市场背景判断降级。";
+  return {
+    indexes: results,
+    avgChange,
+    mood,
+    discipline,
+    source: "东方财富指数行情",
+    updatedAt: new Date().toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" })
+  };
+}
+
+function validateData(quote, metrics, news, extra = {}) {
+  const announcements = extra.announcements || [];
+  const finance = extra.finance || null;
+  const moneyFlow = extra.moneyFlow || [];
+  const market = extra.market || null;
+  const hasMarket = !!market?.indexes?.some((item) => Number.isFinite(item.changePct));
   const priceGap = Number.isFinite(quote.price) && Number.isFinite(metrics.close)
     ? Math.abs(quote.price - metrics.close) / Math.max(quote.price, 0.01) * 100
     : null;
   const checks = [
     {
-      name: "行情-K线一致性",
+      name: "琛屾儏-K绾夸竴鑷存€?,
       ok: priceGap === null || priceGap < 1.5,
-      text: priceGap === null ? "数据不足，暂无法校验。" : `行情价与最近K线收盘价相差 ${fmtPct(priceGap)}。`
+      text: priceGap === null ? "鏁版嵁涓嶈冻锛屾殏鏃犳硶鏍￠獙銆? : `琛屾儏浠蜂笌鏈€杩慘绾挎敹鐩樹环鐩稿樊 ${fmtPct(priceGap)}銆俙
     },
     {
-      name: "历史样本长度",
+      name: "鍘嗗彶K绾挎牱鏈?,
       ok: metrics.rows.length >= 80,
-      text: `当前可用K线样本 ${metrics.rows.length} 条。`
+      text: `褰撳墠鍙敤K绾挎牱鏈?${metrics.rows.length} 鏉°€俙
     },
     {
-      name: "资金流字段",
+      name: "褰撴棩璧勯噾瀛楁",
       ok: Number.isFinite(quote.mainNetInflow),
-      text: Number.isFinite(quote.mainNetInflow) ? `主力净流入约 ${fmtMoney(quote.mainNetInflow)}。` : "免费接口未返回资金流字段。"
+      text: Number.isFinite(quote.mainNetInflow) ? `涓诲姏鍑€娴佸叆绾?${fmtMoney(quote.mainNetInflow)}锛屽崰姣?${fmt(quote.mainNetInflowPct, 2)}%銆俙 : "鍏嶈垂鎺ュ彛鏈繑鍥炲綋鏃ヨ祫閲戞祦瀛楁銆?
     },
     {
-      name: "消息面覆盖",
+      name: "鍘嗗彶璧勯噾娴佽鐩?,
+      ok: moneyFlow.length >= 3,
+      text: moneyFlow.length ? `鎶撳埌 ${moneyFlow.length} 澶╁巻鍙茶祫閲戞祦銆俙 : "鏈姄鍒板巻鍙茶祫閲戞祦锛屽彧鑳界敤褰撴棩璧勯噾瀛楁銆?
+    },
+    {
+      name: "鏂伴椈瑕嗙洊",
       ok: news.length > 0,
-      text: news.length ? `抓取到 ${news.length} 条近期消息标题。` : "未抓到近期消息，不能强行判断消息面。"
+      text: news.length ? `鎶撳埌 ${news.length} 鏉¤繎鏈熸秷鎭爣棰樸€俙 : "鏈姄鍒拌繎鏈熸柊闂伙紝涓嶈兘寮鸿鍒ゆ柇娑堟伅闈€?
+    },
+    {
+      name: "鍏憡绾跨储瑕嗙洊",
+      ok: announcements.length > 0,
+      text: announcements.length ? `鎶撳埌 ${announcements.length} 鏉″叕鍛?璐㈡姤绾跨储銆俙 : "鏈姄鍒板叕鍛婄嚎绱紝鍏憡闈㈠彧鑳芥彁绀虹己澶便€?
+    },
+    {
+      name: "璐㈠姟鎽樿瑕嗙洊",
+      ok: !!finance,
+      text: finance ? `鎶撳埌鏈€杩戜竴鏈熻储鍔℃憳瑕侊細${finance.reportDate || "鏃ユ湡鏈繑鍥?}銆俙 : "鏈姄鍒拌储鍔℃憳瑕侊紝鐩堝埄璐ㄩ噺涓嶈兘涓嬪己缁撹銆?
+    },
+    {
+      name: "琛屼笟瀛楁瑕嗙洊",
+      ok: !!quote.industry,
+      text: quote.industry ? `琛屾儏鎺ュ彛杩斿洖琛屼笟/姒傚康瀛楁锛?{quote.industry}銆俙 : "鏈彇鍒拌涓氬瓧娈碉紝琛屼笟鏅皵闇€瑕佸閮ㄦ牳瀵广€?
+    },
+    {
+      name: "甯傚満鑳屾櫙瑕嗙洊",
+      ok: hasMarket,
+      text: hasMarket ? `鎸囨暟鑳屾櫙锛?{market.mood}锛屽钩鍧囨定璺?${fmtPct(market.avgChange)}銆俙 : "鎸囨暟鑳屾櫙鏈彇鍒帮紝涓嶈兘鍒ゆ柇澶х洏鐜銆?
     }
   ];
   const passed = checks.filter((item) => item.ok).length;
   return {
     score: Math.round(passed / checks.length * 100),
-    level: passed >= 3 ? "较可信" : passed >= 2 ? "需复核" : "数据不足",
+    level: passed >= 8 ? "杈冨彲鐢? : passed >= 6 ? "涓瓑鍙俊" : passed >= 4 ? "闇€澶嶆牳" : "鏁版嵁涓嶈冻",
     checks,
-    sources: ["东方财富公开行情接口", "东方财富历史K线接口", "东方财富搜索"]
+    sources: ["涓滄柟璐㈠瘜鍏紑琛屾儏鎺ュ彛", "涓滄柟璐㈠瘜鍘嗗彶K绾挎帴鍙?, "涓滄柟璐㈠瘜鎼滅储", "涓滄柟璐㈠瘜鏁版嵁涓績", "涓滄柟璐㈠瘜鍘嗗彶璧勯噾娴?, "涓滄柟璐㈠瘜鎸囨暟琛屾儏"]
   };
 }
 
@@ -335,27 +496,45 @@ function backtest(rows) {
   };
 }
 
-function buildReport(quote, metrics, news = [], validation = null) {
-  const capitalText = Number.isFinite(quote.mainNetInflow)
-    ? `主力净流入约 ${fmtMoney(quote.mainNetInflow)}，占比 ${fmt(quote.mainNetInflowPct, 2)}%。`
-    : "免费接口未返回资金流，资金面暂无法判断。";
-  const valueText = `总市值约 ${fmtMoney(quote.marketCap)}，市盈率约 ${fmt(quote.pe, 2)}。`;
-  const newsText = news.length
-    ? `近期抓到 ${news.length} 条消息标题，需点开原文确认。`
-    : "近期消息抓取为空，不能用消息面做强判断。";
+function buildReport(quote, metrics, news = [], validation = null, extra = {}) {
+  const announcements = extra.announcements || [];
+  const finance = extra.finance || null;
+  const moneyFlow = extra.moneyFlow || [];
+  const market = extra.market || null;
+  const recentFlow = moneyFlow.slice(-3).map((row) => `${row.date} ${fmtMoney(row.mainNetInflow)}`).join("锛?);
+  const capitalText = [
+    Number.isFinite(quote.mainNetInflow)
+      ? `褰撴棩涓诲姏鍑€娴佸叆绾?${fmtMoney(quote.mainNetInflow)}锛屽崰姣?${fmt(quote.mainNetInflowPct, 2)}%銆俙
+      : "鍏嶈垂鎺ュ彛鏈繑鍥炲綋鏃ヨ祫閲戞祦銆?,
+    recentFlow ? `杩戝嚑鏃ヨ祫閲戞祦锛?{recentFlow}銆俙 : "鍘嗗彶璧勯噾娴佹湭鍙栧埌锛屼笉鑳界‘璁よ祫閲戣繛缁€с€?
+  ].join("");
+  const valueText = `鎬诲競鍊肩害 ${fmtMoney(quote.marketCap)}锛屽競鐩堢巼绾?${fmt(quote.pe, 2)}銆俙;
+  const financeText = finance
+    ? `鏈€杩戜竴鏈熻储鍔℃憳瑕侊細鎶ュ憡鏈?${finance.reportDate || "鏈繑鍥?}锛岃惀鏀?${fmtMoney(finance.revenue)}锛屽綊姣嶅噣鍒╂鼎 ${fmtMoney(finance.netProfit)}锛岃惀鏀跺悓姣?${fmtPct(finance.revenueYoY)}锛屽噣鍒╂鼎鍚屾瘮 ${fmtPct(finance.profitYoY)}锛孯OE ${fmtPct(finance.roe)}銆俙
+    : "鍏紑鍏嶈垂鎺ュ彛鏈彇鍒拌储鍔℃憳瑕侊紝鐩堝埄璐ㄩ噺鍜屼及鍊煎垽鏂檷绾с€?;
+  const newsText = [
+    news.length ? `杩戞湡鎶撳埌 ${news.length} 鏉℃柊闂绘爣棰樸€俙 : "杩戞湡鏂伴椈鎶撳彇涓虹┖銆?,
+    announcements.length ? `鎶撳埌 ${announcements.length} 鏉″叕鍛?璐㈡姤绾跨储銆俙 : "鍏憡绾跨储鎶撳彇涓虹┖銆?
+  ].join("");
+  const marketText = market?.indexes?.some((item) => Number.isFinite(item.changePct))
+    ? `${market.mood}锛屼富瑕佹寚鏁板钩鍧囨定璺?${fmtPct(market.avgChange)}銆?{market.discipline}`
+    : "鎸囨暟蹇収鏈彇鍒帮紝鏈甯傚満鑳屾櫙鍒ゆ柇闄嶇骇銆?;
   const qualityText = validation
-    ? `数据可靠性：${validation.level}（校验分 ${validation.score}/100）。`
-    : "数据可靠性：未校验。";
+    ? `鏁版嵁鍙潬鎬э細${validation.level}锛堟牎楠屽垎 ${validation.score}/100锛夈€俙
+    : "鏁版嵁鍙潬鎬э細鏈牎楠屻€?;
   return {
-    summary: `${quote.name} 当前为${trend(metrics)}，近20日涨跌 ${fmtPct(metrics.ret20)}，RSI ${fmt(metrics.rsi, 0)}。`,
-    position: `当前仓位建议不是买卖指令：已持有先看 ${fmt(metrics.ma20)} 附近是否守住；空仓先看 ${fmt(metrics.ma10)} / ${fmt(metrics.ma20)} 附近是否出现缩量企稳。`,
-    cycle: `行情处在${trend(metrics)}。${valueText} 行业景气、库存、产能、政策需要正式数据源补充，免费版不做强结论。`,
-    technical: `趋势：${trend(metrics)}；支撑观察：${fmt(metrics.ma20)}；压力观察：${fmt(metrics.high60)}；近60日最大回撤 ${fmtPct(metrics.drawdown60)}。`,
+    summary: `${quote.name} 褰撳墠涓?${trend(metrics)}锛岃繎20鏃ユ定璺?${fmtPct(metrics.ret20)}锛孯SI ${fmt(metrics.rsi, 0)}銆傚競鍦鸿儗鏅細${marketText}`,
+    position: `绾緥寤鸿锛氬凡鎸佹湁鍏堢湅椋庨櫓瑙傚療绾?${fmt(metrics.ma20)} 鏄惁鏈夋晥锛涜嫢浠撲綅鍋忛噸锛屼紭鍏堟妸鍗曞彧鑲＄エ瀵瑰搴处鎴风殑褰卞搷闄嶄笅鏉ワ紱鑻ョ┖浠擄紝鍏堢瓑 ${fmt(metrics.ma10)} / ${fmt(metrics.ma20)} 闄勮繎鍑虹幇缂╅噺浼佺ǔ鍐嶇撼鍏ヨ瀵熴€傚競鍦哄亸寮辨椂闄嶄綆鍔ㄤ綔棰戠巼锛屽競鍦哄亸寮烘椂涔熶笉鎶婂崟鏃ヤ笂娑ㄥ綋浣滀拱鍏ョ悊鐢便€俙,
+    market: marketText,
+    cycle: `鍛ㄦ湡妗嗘灦锛?{quote.industry ? `琛屼笟/姒傚康瀛楁涓?${quote.industry}銆俙 : "琛屼笟瀛楁鏈繑鍥烇紝琛屼笟鍛ㄦ湡涓嶈兘涓嬮噸缁撹銆?} ${valueText} ${financeText} 鍏嶈垂鐗堟妸鍛ㄦ湡鍒ゆ柇闄愬畾涓衡€滅嚎绱㈢骇鈥濓紝涓嶆妸瀹冧吉瑁呮垚鏈烘瀯鐮旀姤銆俙,
+    technical: `K绾挎墽琛屾鏋讹細瓒嬪娍 ${trend(metrics)}锛涘凡鎸佹湁椋庨櫓瑙傚療绾?${fmt(metrics.ma20)}锛涚┖浠撹瀵熷尯 ${fmt(metrics.ma10)} / ${fmt(metrics.ma20)}锛涗笂鏂瑰帇鍔涜瀵?${fmt(metrics.high60)}锛涜繎60鏃ユ渶澶у洖鎾?${fmtPct(metrics.drawdown60)}锛涢噺鑳界害涓?0鏃ュ潎閲?${fmt(metrics.volumeRatio, 2)} 鍊嶃€俙,
     capital: capitalText,
+    finance: financeText,
     news: newsText,
+    announcements: announcements.length ? announcements.map((item) => `${item.date ? `${item.date}锛歚 : ""}${item.title}`).join("锛?) : "鏈姄鍒板叕鍛?璐㈡姤绾跨储銆?,
     quality: qualityText,
-    risk: "公开免费接口可能延迟或失败，龙虎榜、公告原文、财报细项和行业数据库仍需要后续接正式数据源交叉验证。",
-    sources: validation?.sources || ["东方财富公开行情接口", "东方财富历史K线接口"]
+    risk: "缁撹蹇呴』甯︽潯浠讹細鑻ヨ穼鐮撮闄╄瀵熺嚎骞舵斁閲忥紝椋庨櫓鍗囬珮锛涜嫢閲嶄粨涓旀诞浜忔墿澶э紝鍏堟帶鍒跺崟鍙粨浣嶏紱鑻ュ啿鍒颁笂鏂瑰帇鍔涘尯浣嗛噺鑳借窡涓嶄笂锛岃拷楂橀闄╁崌楂樸€傚叕寮€鍏嶈垂鎺ュ彛鍙兘寤惰繜鎴栧け璐ワ紝鏈€缁堜互浜ゆ槗鎵€鍏憡鍜屽埜鍟嗚鎯呬负鍑嗐€?,
+    sources: validation?.sources || ["涓滄柟璐㈠瘜鍏紑琛屾儏鎺ュ彛", "涓滄柟璐㈠瘜鍘嗗彶K绾挎帴鍙?]
   };
 }
 
@@ -374,3 +553,7 @@ function fmt(value, digits = 2) {
 function fmtPct(value) {
   return Number.isFinite(value) ? `${value > 0 ? "+" : ""}${value.toFixed(2)}%` : "--";
 }
+
+
+
+

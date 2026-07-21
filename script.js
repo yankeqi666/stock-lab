@@ -94,7 +94,10 @@ const els = {
   portfolioInsight: $("#portfolioInsight"),
   healthPill: $("#healthPill"),
   pendingList: $("#pendingList"),
-  pendingCount: $("#pendingCount")
+  pendingCount: $("#pendingCount"),
+  marketMood: $("#marketMood"),
+  marketGrid: $("#marketGrid"),
+  marketNote: $("#marketNote")
 };
 
 let currentStock = null;
@@ -102,6 +105,7 @@ let currentMetrics = null;
 let watchQuotes = {};
 let lastEnrichedHoldings = [];
 let watchTimer = null;
+let marketSnapshot = null;
 
 function loadJson(key, fallback) {
   try {
@@ -163,7 +167,7 @@ function cssMove(value) {
 
 async function fetchQuote(input) {
   const code = normalizeCode(input);
-  const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${encodeURIComponent(secid(code))}&fields=f57,f58,f43,f44,f45,f46,f47,f48,f60,f116,f162,f170`;
+  const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${encodeURIComponent(secid(code))}&fields=f57,f58,f43,f44,f45,f46,f47,f48,f60,f116,f162,f170,f62,f184,f127,f128,f129`;
   const res = await fetch(url);
   if (!res.ok) throw new Error("行情接口暂时访问失败");
   const json = await res.json();
@@ -182,6 +186,9 @@ async function fetchQuote(input) {
     amount: Number(d.f48),
     marketCap: Number(d.f116),
     pe: Number(d.f162) / 100,
+    mainNetInflow: Number(d.f62),
+    mainNetInflowPct: Number(d.f184),
+    industry: d.f127 || d.f128 || d.f129 || "",
     source: "东方财富公开行情接口",
     updatedAt: new Date().toLocaleString("zh-CN", { hour12: false })
   };
@@ -227,6 +234,63 @@ async function fetchNews(stock) {
   } catch {
     return [];
   }
+}
+
+async function fetchMarketSnapshot() {
+  const indexes = [
+    { code: "1.000001", name: "上证指数" },
+    { code: "0.399001", name: "深证成指" },
+    { code: "0.399006", name: "创业板指" },
+    { code: "1.000688", name: "科创50" }
+  ];
+  const rows = await Promise.all(indexes.map(async (item) => {
+    try {
+      const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${encodeURIComponent(item.code)}&fields=f57,f58,f43,f60,f170,f48`;
+      const res = await fetch(url);
+      const json = await res.json();
+      const d = json.data || {};
+      return {
+        code: d.f57 || item.code,
+        name: d.f58 || item.name,
+        price: Number(d.f43) / 100,
+        changePct: Number(d.f170) / 100,
+        amount: Number(d.f48)
+      };
+    } catch {
+      return { ...item, price: NaN, changePct: NaN, amount: NaN };
+    }
+  }));
+  const valid = rows.filter((item) => Number.isFinite(item.changePct));
+  const avgChange = average(valid.map((item) => item.changePct));
+  const strong = valid.filter((item) => item.changePct >= 0.5).length;
+  const weak = valid.filter((item) => item.changePct <= -0.5).length;
+  const mood = !valid.length ? "数据不足" : strong >= 3 ? "市场偏强" : weak >= 3 ? "市场偏弱" : "市场震荡";
+  const discipline = mood === "市场偏弱"
+    ? "大盘偏弱时，个股反弹先当修复看，不把一天上涨当趋势反转；重仓和破线项优先处理。"
+    : mood === "市场偏强"
+      ? "大盘偏强时，个股上涨要分清是市场带动还是自身改善；接近压力位仍看量能。"
+      : mood === "市场震荡"
+        ? "震荡市先看纪律线，少做临时动作，优先处理仓位过重和跌破风险线。"
+        : "指数数据未取到，市场背景判断降级。";
+  return { indexes: rows, avgChange, mood, discipline };
+}
+
+function renderMarketSnapshot(snapshot) {
+  if (!els.marketMood || !els.marketGrid || !els.marketNote) return;
+  if (!snapshot) {
+    els.marketMood.textContent = "等待刷新";
+    els.marketNote.textContent = "市场数据未刷新时，不把个股涨跌解释成趋势。";
+    return;
+  }
+  els.marketMood.textContent = snapshot.mood;
+  els.marketGrid.innerHTML = snapshot.indexes.map((item) => `
+    <article>
+      <span>${item.name}</span>
+      <strong class="${cssMove(item.changePct)}">${Number.isFinite(item.price) ? fixed(item.price) : "--"}</strong>
+      <em class="${cssMove(item.changePct)}">${percent(item.changePct)} · 成交额 ${formatWanYi(item.amount)}</em>
+    </article>
+  `).join("");
+  els.marketNote.textContent = `${snapshot.mood}，主要指数平均涨跌 ${percent(snapshot.avgChange)}。${snapshot.discipline}`;
 }
 
 function average(values) {
@@ -531,6 +595,10 @@ function renderAnalysis(stock, metrics, news) {
 function renderCloudAnalysis(data) {
   currentStock = data.quote;
   currentMetrics = data.metrics;
+  if (data.market) {
+    marketSnapshot = data.market;
+    renderMarketSnapshot(marketSnapshot);
+  }
   const stock = data.quote;
   const metrics = data.metrics;
   els.scorePanel.classList.remove("hidden");
@@ -558,17 +626,55 @@ function renderCloudAnalysis(data) {
   els.reportLabel.textContent = data.label;
   els.reportBody.innerHTML = `
     <section class="report-section"><strong>当前仓位建议</strong><br>${data.report.position}</section>
+    <section class="report-section"><strong>建议置信度</strong><br>${stockConfidenceSection(data)}</section>
+    <section class="report-section"><strong>市场背景</strong><br>${data.report.market || "指数快照未取到，本次市场背景判断降级。"}</section>
     <section class="report-section"><strong>一、周期框架</strong><br>${data.report.cycle}</section>
     <section class="report-section"><strong>二、K线执行框架</strong><br>${data.report.technical}</section>
-    <section class="report-section"><strong>三、资金和估值</strong><br>${data.report.capital || "资金流数据不足。"}<br>市值：${formatWanYi(stock.marketCap)}；市盈率：${fixed(stock.pe, 2)}。</section>
-    <section class="report-section"><strong>四、消息和公告</strong><br>${data.report.news || "免费接口未抓到消息。"}${renderNewsLines(data.news)}</section>
-    <section class="report-section"><strong>五、数据可靠性</strong><br>${data.report.quality || "未校验。"}${renderValidation(data.validation)}</section>
-    <section class="report-section"><strong>六、回测结果</strong><br>示例策略历史收益 ${percent(data.backtest.returnPct)}，最大回撤 ${percent(data.backtest.maxDrawdownPct)}，交易次数 ${data.backtest.tradeCount}。${data.backtest.note}</section>
+    <section class="report-section"><strong>三、资金和估值</strong><br>${data.report.capital || "资金流数据不足。"}${renderMoneyFlowLines(data.moneyFlow)}<br>市值：${formatWanYi(stock.marketCap)}；市盈率：${fixed(stock.pe, 2)}。</section>
+    <section class="report-section"><strong>四、财报摘要</strong><br>${data.report.finance || "公开源未取到财务摘要。"}${renderFinanceBox(data.finance)}</section>
+    <section class="report-section"><strong>五、消息和公告</strong><br>${data.report.news || "免费接口未抓到消息。"}${renderNewsLines(data.news)}${renderAnnouncementLines(data.announcements)}</section>
+    <section class="report-section"><strong>六、数据可靠性</strong><br>${data.report.quality || "未校验。"}${renderValidation(data.validation)}</section>
+    <section class="report-section"><strong>七、回测结果</strong><br>示例策略历史收益 ${percent(data.backtest.returnPct)}，最大回撤 ${percent(data.backtest.maxDrawdownPct)}，交易次数 ${data.backtest.tradeCount}。${data.backtest.note}</section>
     <section class="conclusion-block"><strong>标签：${data.label}</strong><br>${data.report.risk}</section>
   `;
   if (els.newsCard) els.newsCard.classList.add("hidden");
   els.lastUpdate.textContent = `尾盘纪律检查 · ${stock.updatedAt || data.updatedAt}`;
   els.costInput.placeholder = `成本价，例如 ${fixed(stock.price)}`;
+}
+
+function stockConfidenceSection(data) {
+  const stock = data.quote || {};
+  const metrics = data.metrics || {};
+  const validation = data.validation;
+  const evidence = [];
+  const missing = [];
+  if (Number.isFinite(stock.price)) evidence.push(`读取到当前价 ${fixed(stock.price)}。`);
+  if (Number.isFinite(metrics?.ma20)) evidence.push(`可计算 MA20 风险观察线 ${fixed(metrics.ma20)}。`);
+  if (Number.isFinite(metrics?.ret20)) evidence.push(`近20日涨跌 ${percent(metrics.ret20)}。`);
+  if (Number.isFinite(stock.mainNetInflow)) evidence.push(`有资金流字段：主力净流入约 ${formatWanYi(stock.mainNetInflow)}。`);
+  else missing.push("资金流字段");
+  if (data.moneyFlow?.length) evidence.push(`有 ${data.moneyFlow.length} 天历史资金流。`);
+  else missing.push("历史资金流");
+  if (data.finance) evidence.push(`有最近一期财务摘要：${data.finance.reportDate || "日期未返回"}。`);
+  else missing.push("财报摘要");
+  if (data.announcements?.length) evidence.push(`有 ${data.announcements.length} 条公告/财报线索。`);
+  else missing.push("公告线索");
+  if (stock.industry) evidence.push(`有行业/概念字段：${stock.industry}。`);
+  else missing.push("行业字段");
+  if (data.market?.indexes?.some((item) => Number.isFinite(item.changePct))) evidence.push(`有市场背景：${data.market.mood}。`);
+  else missing.push("市场背景");
+  if (validation?.checks?.length) {
+    evidence.push(`数据校验结果：${validation.level}，校验分 ${validation.score}/100。`);
+  } else {
+    missing.push("多数据源校验");
+  }
+  missing.push("公告原文逐字核对", "龙虎榜明细", "机构持仓变化");
+  const confidence = validation?.score >= 75 ? "高" : validation?.score >= 50 ? "中" : "低";
+  return `
+    当前建议置信度：${confidence}。<br>
+    <b>依据：</b><ul>${evidence.map((item) => `<li>${item}</li>`).join("")}</ul>
+    <b>缺失：</b><ul>${missing.slice(0, 5).map((item) => `<li>${item}</li>`).join("")}</ul>
+  `;
 }
 
 function formatWanYi(value) {
@@ -582,6 +688,34 @@ function formatWanYi(value) {
 function renderNewsLines(news = []) {
   if (!news.length) return "";
   return `<ul>${news.slice(0, 4).map((item) => `<li>${item.date ? `${item.date}：` : ""}${item.title}</li>`).join("")}</ul>`;
+}
+
+function renderAnnouncementLines(list = []) {
+  if (!list.length) return "<p class=\"muted-text\">公告/财报线索未取到，不能把消息面当成强依据。</p>";
+  return `
+    <p class="muted-text">公告/财报线索：</p>
+    <ul>${list.slice(0, 5).map((item) => `<li>${item.date ? `${item.date}：` : ""}${item.title}</li>`).join("")}</ul>
+  `;
+}
+
+function renderMoneyFlowLines(list = []) {
+  if (!list.length) return "<p class=\"muted-text\">历史资金流未取到，资金连续性暂不能确认。</p>";
+  return `
+    <p class="muted-text">近几日资金流：</p>
+    <ul>${list.slice(-5).map((item) => `<li>${item.date}：主力净流入 ${formatWanYi(item.mainNetInflow)}</li>`).join("")}</ul>
+  `;
+}
+
+function renderFinanceBox(finance) {
+  if (!finance) return "<p class=\"muted-text\">公开源未返回财报摘要，盈利质量判断降级。</p>";
+  return `
+    <ul>
+      <li>报告期：${finance.reportDate || "--"}</li>
+      <li>营收：${formatWanYi(finance.revenue)}，同比 ${percent(finance.revenueYoY)}</li>
+      <li>归母净利润：${formatWanYi(finance.netProfit)}，同比 ${percent(finance.profitYoY)}</li>
+      <li>ROE：${percent(finance.roe)}</li>
+    </ul>
+  `;
 }
 
 function renderValidation(validation) {
@@ -850,13 +984,13 @@ function renderPortfolioInsight(items, risks) {
   }, 0);
   if (high) {
     els.healthPill.textContent = "需复核";
-    els.portfolioInsight.textContent = `今天优先看 ${high} 个高风险项。组合仓位约 ${fixed(totalPosition, 0)}%，先确认是否有重仓、破线或大幅浮亏。`;
+    els.portfolioInsight.textContent = `今天优先看 ${high} 个高风险项。组合仓位约 ${fixed(totalPosition, 0)}%，先确认是否有重仓、破线或大幅浮亏。${marketSnapshot ? `市场背景：${marketSnapshot.mood}。` : ""}`;
   } else if (warn) {
     els.healthPill.textContent = "有提醒";
-    els.portfolioInsight.textContent = `今天有 ${warn} 个提醒项。先看波动较大的持仓，再决定是否继续观察。`;
+    els.portfolioInsight.textContent = `今天有 ${warn} 个提醒项。先看波动较大的持仓，再决定是否继续观察。${marketSnapshot ? `市场背景：${marketSnapshot.mood}。` : ""}`;
   } else {
     els.healthPill.textContent = "较平稳";
-    els.portfolioInsight.textContent = `当前没有明显高风险提示。组合仓位约 ${fixed(totalPosition, 0)}%，继续按原计划复盘。`;
+    els.portfolioInsight.textContent = `当前没有明显高风险提示。组合仓位约 ${fixed(totalPosition, 0)}%，继续按原计划复盘。${marketSnapshot ? `市场背景：${marketSnapshot.mood}。` : ""}`;
   }
 }
 
@@ -864,6 +998,12 @@ async function refreshHoldings() {
   if (els.refreshBtn) {
     els.refreshBtn.disabled = true;
     els.refreshBtn.textContent = "刷新中";
+  }
+  try {
+    marketSnapshot = await fetchMarketSnapshot();
+    renderMarketSnapshot(marketSnapshot);
+  } catch {
+    renderMarketSnapshot(marketSnapshot);
   }
   const list = holdings();
   const enriched = [];
@@ -1019,6 +1159,64 @@ function holdingPlan(item, risk) {
   };
 }
 
+function recommendationEvidence(item, risk, plan) {
+  const quote = item.quote;
+  const metrics = item.metrics;
+  const evidence = [];
+  const missing = [];
+  let score = 45;
+  if (!quote) {
+    return {
+      confidence: "低",
+      score: 20,
+      evidence: ["没有读取到最新行情。"],
+      missing: ["行情数据", "历史K线", "资金流", "公告和财报"]
+    };
+  }
+  const marketValue = item.shares ? quote.price * item.shares : null;
+  const position = marketValue && item.portfolio ? (marketValue / item.portfolio) * 100 : null;
+  const profitPct = item.cost ? ((quote.price - item.cost) / item.cost) * 100 : null;
+  if (Number.isFinite(position)) {
+    evidence.push(`单只仓位约 ${fixed(position, 1)}%。`);
+    score += 10;
+    if (position > 35) evidence.push("仓位超过 35% 警戒线，组合风险集中。");
+  } else {
+    missing.push("账户总额，无法准确判断仓位轻重");
+  }
+  if (Number.isFinite(profitPct)) {
+    evidence.push(`当前相对成本 ${percent(profitPct)}。`);
+    score += 10;
+  } else {
+    missing.push("成本价，无法判断浮盈浮亏压力");
+  }
+  if (Number.isFinite(quote.changePct)) {
+    evidence.push(`今日涨跌 ${percent(quote.changePct)}。`);
+    score += 8;
+  }
+  if (metrics?.ma20) {
+    evidence.push(`MA20 风险观察线 ${fixed(metrics.ma20)}，当前价 ${fixed(quote.price)}。`);
+    score += 12;
+  } else {
+    missing.push("MA20 风险观察线");
+  }
+  if (metrics?.high60) {
+    evidence.push(`60日压力参考 ${fixed(metrics.high60)}。`);
+    score += 6;
+  }
+  if (Number.isFinite(quote.mainNetInflow)) {
+    evidence.push(`主力净流入约 ${formatWanYi(quote.mainNetInflow)}。`);
+    score += 8;
+  } else {
+    missing.push("资金流细项");
+  }
+  missing.push("最新公告原文", "财报细项", "行业景气数据");
+  if (risk.level === "high") score += 8;
+  if (/借反弹|降风险|暂停|控制/.test(plan.label)) score += 6;
+  score = Math.max(0, Math.min(92, Math.round(score - Math.min(missing.length, 5) * 4)));
+  const confidence = score >= 75 ? "高" : score >= 55 ? "中" : "低";
+  return { confidence, score, evidence, missing };
+}
+
 function renderHoldingWarnings(items) {
   const warningList = $("#warningList");
   const warningCount = $("#warningCount");
@@ -1033,6 +1231,7 @@ function renderHoldingWarnings(items) {
     const metrics = item.metrics;
     const risk = holdingRisk(item);
     const plan = holdingPlan(item, risk);
+    const explain = recommendationEvidence(item, risk, plan);
     const marketValue = quote && item.shares ? quote.price * item.shares : null;
     const floating = quote && item.cost && item.shares ? (quote.price - item.cost) * item.shares : null;
     const profitPct = quote && item.cost ? ((quote.price - item.cost) / item.cost) * 100 : null;
@@ -1057,6 +1256,13 @@ function renderHoldingWarnings(items) {
           <span>当前建议</span>
           <strong>${plan.label}</strong>
           <p>${plan.text}</p>
+        </div>
+        <div class="evidence-box">
+          <strong>建议置信度：${explain.confidence}（${explain.score}/100）</strong>
+          <span>主要依据</span>
+          <ul>${explain.evidence.slice(0, 5).map((text) => `<li>${text}</li>`).join("")}</ul>
+          <span>缺失数据</span>
+          <ul>${explain.missing.slice(0, 5).map((text) => `<li>${text}</li>`).join("")}</ul>
         </div>
         <p class="warning-note">${risk.text}。先复核原因和仓位，不要凭当天情绪操作。</p>
       </article>
@@ -1103,6 +1309,7 @@ function updateAccount() {
 }
 
 function renderTodayAction(chanceCount, total) {
+  const marketLine = marketSnapshot ? `<li>市场背景：${marketSnapshot.mood}。${marketSnapshot.discipline}</li>` : "";
   if (!total) {
     els.actionStatus.textContent = "等待持仓";
     els.todayAction.innerHTML = `
@@ -1110,6 +1317,7 @@ function renderTodayAction(chanceCount, total) {
       <ul>
         <li>填成本和股数后，系统会算浮盈亏和仓位。</li>
         <li>刷新后可以点持仓进入个股评分卡。</li>
+        ${marketLine}
       </ul>
     `;
     return;
@@ -1121,6 +1329,7 @@ function renderTodayAction(chanceCount, total) {
       <ul>
         <li>看是否跌破风险观察线，而不是凭感觉追涨杀跌。</li>
         <li>看仓位是否已经过重，避免单只股票影响全家账户。</li>
+        ${marketLine}
       </ul>
     `;
     return;
@@ -1131,6 +1340,7 @@ function renderTodayAction(chanceCount, total) {
     <ul>
       <li>先看强制纪律队列，再看候选是否仍在计划价附近。</li>
       <li>如果现金低于下限，优先复核仓位，而不是继续加仓。</li>
+      ${marketLine}
     </ul>
   `;
 }
@@ -1181,6 +1391,21 @@ function makeCloseReview() {
     const quote = item.quote;
     return sum + (quote && item.shares ? (quote.price - quote.prevClose) * item.shares : 0);
   }, 0);
+  const positionRows = items.map((item) => {
+    const quote = item.quote;
+    const value = quote && item.shares ? quote.price * item.shares : 0;
+    const position = item.portfolio ? value / item.portfolio * 100 : (totalValue ? value / totalValue * 100 : null);
+    return { item, value, position };
+  }).filter((row) => Number.isFinite(row.position)).sort((a, b) => b.position - a.position);
+  const topPosition = positionRows[0];
+  const concentrationText = topPosition && topPosition.position >= 50
+    ? `组合集中度偏高：${topPosition.item.name} 单只仓位约 ${fixed(topPosition.position, 1)}%。这类情况优先处理“单只股票影响全家账户”的问题，不要先纠结当天涨跌。`
+    : topPosition && topPosition.position >= 35
+      ? `组合有集中度提醒：${topPosition.item.name} 单只仓位约 ${fixed(topPosition.position, 1)}%，需要确认是否超过原计划。`
+      : "组合集中度暂未显示明显过重，但仍需看每只股票的风险观察线。";
+  const marketText = marketSnapshot
+    ? `市场背景：${marketSnapshot.mood}，主要指数平均涨跌 ${percent(marketSnapshot.avgChange)}。${marketSnapshot.discipline}`
+    : "市场背景：指数快照未取到，本轮市场层判断降级。";
   const topRisks = [...high, ...mid].slice(0, 4);
   const tomorrow = topRisks.length
     ? topRisks.map(({ item, risk }) => {
@@ -1193,13 +1418,21 @@ function makeCloseReview() {
     : mid.length
       ? "组合建议：今天不急着扩大仓位，先复核中风险持仓的成本、风险线和仓位。"
       : "组合建议：组合暂时平稳，可以继续按计划观察，但不要因为平稳就随意加仓。";
+  const planEvidence = risks.slice(0, 5).map(({ item, risk }) => {
+    const plan = holdingPlan(item, risk);
+    const explain = recommendationEvidence(item, risk, plan);
+    return `<li>${item.name}：${plan.label}，置信度${explain.confidence}；依据：${explain.evidence.slice(0, 2).join(" ")}</li>`;
+  }).join("");
   if (els.autoReview) {
     els.autoReview.innerHTML = `
       <strong>今日组合状态</strong>
       当前持仓 ${items.length} 只，估算市值 ${money(totalValue)}，今日盈亏 ${money(todayProfit)}。
       高风险 ${high.length} 只，中风险 ${mid.length} 只。
+      <strong>市场和仓位背景</strong>
+      ${marketText}<br>${concentrationText}
       <strong>当前规划建议</strong>
       ${portfolioPlan}
+      <ul>${planEvidence}</ul>
       <strong>明日优先观察</strong>
       <ul>${tomorrow}</ul>
       <strong>纪律提醒</strong>
@@ -1366,4 +1599,11 @@ bindEvents();
 loadSettings();
 renderHoldings();
 updateAccount();
+fetchMarketSnapshot()
+  .then((snapshot) => {
+    marketSnapshot = snapshot;
+    renderMarketSnapshot(snapshot);
+    renderTodayAction(0, holdings().length);
+  })
+  .catch(() => renderMarketSnapshot(null));
 
