@@ -97,7 +97,10 @@ const els = {
   pendingCount: $("#pendingCount"),
   marketMood: $("#marketMood"),
   marketGrid: $("#marketGrid"),
-  marketNote: $("#marketNote")
+  marketNote: $("#marketNote"),
+  allocationMood: $("#allocationMood"),
+  allocationGrid: $("#allocationGrid"),
+  sectorAdvice: $("#sectorAdvice")
 };
 
 let currentStock = null;
@@ -790,6 +793,85 @@ function formatWanYi(value) {
   return num.toFixed(2);
 }
 
+function inferSector(item) {
+  const text = `${item.quote?.industry || ""} ${item.name || ""} ${item.code || ""}`;
+  if (/白酒|茅台|五粮液|泸州|酒/.test(text)) return "白酒消费";
+  if (/银行|招商|平安|兴业|工商|农业|建设/.test(text)) return "银行金融";
+  if (/证券|券商|东方财富|中信证券|华泰/.test(text)) return "券商金融";
+  if (/半导体|芯片|科创|集成|设备/.test(text)) return "半导体";
+  if (/新能源|电池|锂|光伏|宁德|比亚迪/.test(text)) return "新能源";
+  if (/医药|医疗|创新药|恒瑞|迈瑞/.test(text)) return "医药";
+  if (/ETF|基金|混合|指数/.test(text)) return "基金ETF";
+  return item.quote?.industry || "未分类";
+}
+
+function portfolioAllocation(items) {
+  let totalValue = 0;
+  let portfolioBase = 0;
+  const rows = items.map((item) => {
+    const value = item.quote && item.shares ? item.quote.price * item.shares : 0;
+    totalValue += value;
+    portfolioBase = Math.max(portfolioBase, Number(item.portfolio) || 0);
+    return { item, value, sector: inferSector(item) };
+  });
+  const base = portfolioBase || totalValue;
+  const totalPosition = base ? totalValue / base * 100 : null;
+  const topStock = rows.slice().sort((a, b) => b.value - a.value)[0];
+  const topStockPct = topStock && base ? topStock.value / base * 100 : null;
+  const sectors = rows.reduce((map, row) => {
+    map.set(row.sector, (map.get(row.sector) || 0) + row.value);
+    return map;
+  }, new Map());
+  const sectorRows = [...sectors.entries()]
+    .map(([name, value]) => ({ name, value, pct: base ? value / base * 100 : null }))
+    .sort((a, b) => b.value - a.value);
+  return { totalValue, base, totalPosition, topStock, topStockPct, sectors: sectorRows };
+}
+
+function renderAllocation(items) {
+  if (!els.allocationMood || !els.allocationGrid || !els.sectorAdvice) return;
+  const allocation = portfolioAllocation(items);
+  if (!items.length || !allocation.totalValue) {
+    els.allocationMood.textContent = "等待持仓";
+    els.allocationGrid.innerHTML = `
+      <article><span>总仓位</span><strong>--</strong><em>等待数据</em></article>
+      <article><span>最大单只</span><strong>--</strong><em>等待数据</em></article>
+      <article><span>板块集中</span><strong>--</strong><em>等待数据</em></article>
+    `;
+    els.sectorAdvice.textContent = "导入或保存持仓后，会给出仓位和板块建议。";
+    return;
+  }
+  const marketCycle = marketSnapshot?.cycle || marketSnapshot?.mood || "市场未知";
+  const topSector = allocation.sectors[0];
+  const topName = allocation.topStock?.item?.name || "--";
+  const totalText = Number.isFinite(allocation.totalPosition) ? `${fixed(allocation.totalPosition, 1)}%` : "--";
+  const topStockText = Number.isFinite(allocation.topStockPct) ? `${fixed(allocation.topStockPct, 1)}%` : "--";
+  const sectorText = topSector && Number.isFinite(topSector.pct) ? `${fixed(topSector.pct, 1)}%` : "--";
+  let mood = "仓位正常";
+  if (allocation.totalPosition >= 90 || allocation.topStockPct >= 50 || topSector?.pct >= 65) mood = "集中度高";
+  else if (allocation.totalPosition >= 75 || allocation.topStockPct >= 35 || topSector?.pct >= 50) mood = "需要复核";
+  els.allocationMood.textContent = mood;
+  els.allocationGrid.innerHTML = `
+    <article><span>总仓位</span><strong>${totalText}</strong><em>${marketCycle}</em></article>
+    <article><span>最大单只</span><strong>${topStockText}</strong><em>${topName}</em></article>
+    <article><span>板块集中</span><strong>${sectorText}</strong><em>${topSector?.name || "--"}</em></article>
+  `;
+  const sectorList = allocation.sectors.slice(0, 4).map((row) => `${row.name} ${fixed(row.pct, 1)}%`).join("，");
+  const marketAdvice = marketCycle === "熊市环境"
+    ? "熊市环境下，总仓位和单只仓位都要偏保守，优先降低弱趋势和破 MA20 的持仓。"
+    : marketCycle === "牛市环境"
+      ? "牛市环境下可以保留强趋势仓位，但新增资金优先给回踩不破线、资金流入的板块。"
+      : "震荡市里不要让单一板块过重，强弱轮动快，仓位要留余地。";
+  const concentrationAdvice = topSector?.pct >= 50
+    ? `板块建议：${topSector.name} 暴露偏高，后续不宜继续把新增资金压在同一板块，除非该板块仍是市场主线且个股没有破线。`
+    : "板块建议：当前板块集中度没有特别极端，可以继续按强弱排序观察。";
+  els.sectorAdvice.innerHTML = `
+    <strong>${marketAdvice}</strong>
+    <p>${concentrationAdvice}</p>
+    <p>当前板块分布：${sectorList || "暂无"}。</p>
+  `;
+}
+
 function renderNewsLines(news = []) {
   if (!news.length) return "";
   return `<ul>${news.slice(0, 4).map((item) => `<li>${item.date ? `${item.date}：` : ""}${item.title}</li>`).join("")}</ul>`;
@@ -1033,7 +1115,71 @@ function explainScreenshotImport() {
     els.screenshotFile?.click();
     return;
   }
-  alert("截图导入的安全流程是：先遮住账号隐私，再上传截图识别。当前免费版只做本地预览，不上传图片；要自动识别，需要接 OCR 或视觉模型 API。");
+  recognizeScreenshotHoldings();
+}
+
+function loadTesseract() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+    script.onload = () => window.Tesseract ? resolve(window.Tesseract) : reject(new Error("OCR 加载失败"));
+    script.onerror = () => reject(new Error("OCR 库加载失败，请检查网络"));
+    document.head.appendChild(script);
+  });
+}
+
+function parseOcrHoldings(text) {
+  const normalized = text
+    .replace(/[，｜|]/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/([0-9]{6})/g, "\n$1")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const rows = [];
+  normalized.forEach((line) => {
+    const code = (line.match(/\b[03658]\d{5}\b/) || [])[0];
+    if (!code) return;
+    const nums = line.match(/\d+(?:\.\d+)?/g) || [];
+    const cleaned = line.replace(code, "").replace(/[0-9.,%+\-¥￥]/g, " ").replace(/\s+/g, " ").trim();
+    const name = cleaned.split(" ").find((part) => /[\u4e00-\u9fa5A-Za-z]{2,}/.test(part)) || code;
+    const numeric = nums.map(Number).filter((num) => Number.isFinite(num) && String(num).length <= 12);
+    const cost = numeric.find((num) => num > 0 && num < 10000 && Math.abs(num - Number(code)) > 1) || 0;
+    const shares = numeric.find((num) => num >= 100 && Number.isInteger(num / 100)) || 0;
+    if (shares) rows.push({ code, name, cost, shares, portfolio: 0 });
+  });
+  return rows;
+}
+
+async function recognizeScreenshotHoldings() {
+  const file = els.screenshotFile?.files?.[0];
+  if (!file) {
+    els.screenshotFile?.click();
+    return;
+  }
+  if (els.screenshotHint) els.screenshotHint.textContent = "正在本地识别截图，第一次加载 OCR 会慢一些...";
+  try {
+    const Tesseract = await loadTesseract();
+    const result = await Tesseract.recognize(file, "chi_sim+eng");
+    const text = result?.data?.text || "";
+    const parsed = parseOcrHoldings(text);
+    if (!parsed.length) {
+      if (els.screenshotHint) els.screenshotHint.textContent = "没有识别出持仓。请换更清晰截图，或用 CSV/手动粘贴。";
+      return;
+    }
+    const merged = [...parsed, ...holdings()].reduce((map, item) => {
+      map.set(item.code, item);
+      return map;
+    }, new Map());
+    setHoldings([...merged.values()]);
+    if (els.screenshotHint) {
+      els.screenshotHint.textContent = `识别到 ${parsed.length} 条持仓，已导入。请人工核对成本价和股数，OCR 可能识别错数字。`;
+    }
+    refreshHoldings();
+  } catch (error) {
+    if (els.screenshotHint) els.screenshotHint.textContent = `${error.message || "OCR 识别失败"}。可改用 CSV 或手动粘贴。`;
+  }
 }
 
 function renderRiskQueue(items) {
@@ -1132,6 +1278,7 @@ async function refreshHoldings() {
   updateAccount();
   renderRiskQueue(enriched);
   renderHoldingWarnings(enriched);
+  renderAllocation(enriched);
   updateReviewDate();
   if (els.refreshState) {
     els.refreshState.textContent = `已更新 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`;
@@ -1446,6 +1593,9 @@ function updateAccount() {
     els.profitToday.className = cssMove(todayProfit);
   }
   renderTodayAction(chanceCount, list.length);
+  if (!lastEnrichedHoldings.length) {
+    renderAllocation(list.map((item) => ({ ...item, quote: watchQuotes[item.code], metrics: null })));
+  }
 }
 
 function renderTodayAction(chanceCount, total) {

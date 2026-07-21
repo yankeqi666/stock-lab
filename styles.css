@@ -1484,3 +1484,68 @@ body {
 .plan-box strong {
   color: #ffffff;
 }
+
+.allocation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.allocation-grid article {
+  min-height: 108px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(226,232,240,.95);
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  box-shadow: var(--soft-shadow);
+}
+
+.allocation-grid span {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.allocation-grid strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 27px;
+  line-height: 1.1;
+  font-weight: 950;
+}
+
+.allocation-grid em {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 14px;
+  font-style: normal;
+}
+
+.sector-advice {
+  margin-top: 14px;
+  padding: 16px;
+  border-radius: 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  line-height: 1.65;
+}
+
+.sector-advice strong {
+  display: block;
+  color: #111827;
+}
+
+.sector-advice p {
+  margin: 8px 0 0;
+}
+
+@media (max-width: 560px) {
+  .allocation-grid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 390px) {
+  .allocation-grid { grid-template-columns: 1fr; }
+}

@@ -10,7 +10,7 @@
     <div class="app-shell">
       <header class="hero-head">
         <div>
-          <span class="eyebrow">STOCK LAB PRO · v21</span>
+          <span class="eyebrow">STOCK LAB PRO · v22</span>
           <h1>操盘复盘台</h1>
           <p id="lastUpdate">专业判断版 · 等待刷新</p>
           <div class="trust-row">
@@ -111,6 +111,22 @@
           </div>
         </section>
 
+        <section class="panel allocation-panel">
+          <div class="panel-title">
+            <div>
+              <h2>仓位管理</h2>
+              <p>总仓位、单只集中度、板块暴露</p>
+            </div>
+            <span class="pill" id="allocationMood">等待持仓</span>
+          </div>
+          <div class="allocation-grid" id="allocationGrid">
+            <article><span>总仓位</span><strong>--</strong><em>等待数据</em></article>
+            <article><span>最大单只</span><strong>--</strong><em>等待数据</em></article>
+            <article><span>板块集中</span><strong>--</strong><em>等待数据</em></article>
+          </div>
+          <div class="sector-advice" id="sectorAdvice">导入或保存持仓后，会给出仓位和板块建议。</div>
+        </section>
+
         <section class="panel warning-panel priority-panel">
           <div class="panel-title">
             <div>
@@ -198,8 +214,8 @@
               <h3>也可以上传持仓截图</h3>
               <input id="screenshotFile" class="file-input" type="file" accept="image/*" />
               <img id="screenshotPreview" class="screenshot-preview hidden" alt="持仓截图预览" />
-              <button class="wide-btn" id="screenshotBtn" type="button">上传截图识别</button>
-              <p id="screenshotHint">免费版先显示预览并保护隐私；自动识别需要接 OCR / 视觉模型接口。</p>
+              <button class="wide-btn" id="screenshotBtn" type="button">识别截图持仓</button>
+              <p id="screenshotHint">OCR 在你的浏览器本地运行，不上传服务器。截图越清晰，识别越准；识别后请人工核对。</p>
             </div>
             <textarea id="importText" rows="5" placeholder="600519,贵州茅台,1600,100,200000&#10;300059,东方财富,18.5,1000,200000"></textarea>
             <button class="plain-btn" id="importBtn" type="button">从粘贴内容导入</button>
