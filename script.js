@@ -262,17 +262,23 @@ async function fetchMarketSnapshot() {
   }));
   const valid = rows.filter((item) => Number.isFinite(item.changePct));
   const avgChange = average(valid.map((item) => item.changePct));
+  const totalAmount = valid.reduce((sum, item) => sum + (Number.isFinite(item.amount) ? item.amount : 0), 0);
+  const amountLevel = !totalAmount ? "成交额未知" : totalAmount >= 1200000000000 ? "放量活跃" : totalAmount >= 800000000000 ? "量能正常" : "成交偏弱";
   const strong = valid.filter((item) => item.changePct >= 0.5).length;
   const weak = valid.filter((item) => item.changePct <= -0.5).length;
-  const mood = !valid.length ? "数据不足" : strong >= 3 ? "市场偏强" : weak >= 3 ? "市场偏弱" : "市场震荡";
-  const discipline = mood === "市场偏弱"
-    ? "大盘偏弱时，个股反弹先当修复看，不把一天上涨当趋势反转；重仓和破线项优先处理。"
-    : mood === "市场偏强"
-      ? "大盘偏强时，个股上涨要分清是市场带动还是自身改善；接近压力位仍看量能。"
-      : mood === "市场震荡"
-        ? "震荡市先看纪律线，少做临时动作，优先处理仓位过重和跌破风险线。"
-        : "指数数据未取到，市场背景判断降级。";
-  return { indexes: rows, avgChange, mood, discipline };
+  const redCount = valid.filter((item) => item.changePct > 0).length;
+  const blueCount = valid.filter((item) => item.changePct < 0).length;
+  let cycle = "震荡市";
+  if (strong >= 3 && avgChange >= 0.7 && totalAmount >= 800000000000) cycle = "牛市环境";
+  if (weak >= 3 || (avgChange <= -0.7 && blueCount >= redCount)) cycle = "熊市环境";
+  const mood = !valid.length ? "数据不足" : cycle;
+  const tone = cycle === "牛市环境" ? "good" : cycle === "熊市环境" ? "bad" : "flat";
+  const discipline = cycle === "熊市环境"
+    ? `熊市或弱市里，第一目标是活下来：重仓先降风险，破线股少幻想，反弹先看修复不看反转。今日${amountLevel}，总成交额约 ${formatWanYi(totalAmount)}。`
+    : cycle === "牛市环境"
+      ? `牛市或强市里，可以提高观察积极度：强趋势、资金流入、回踩不破线的票优先；但高位放量滞涨仍要减仓复核。今日${amountLevel}，总成交额约 ${formatWanYi(totalAmount)}。`
+      : `震荡市里，少做追涨杀跌：围绕 MA20 风险线和60日压力做加减仓判断。今日${amountLevel}，总成交额约 ${formatWanYi(totalAmount)}。`;
+  return { indexes: rows, avgChange, totalAmount, amountLevel, redCount, blueCount, cycle, mood, tone, discipline };
 }
 
 function renderMarketSnapshot(snapshot) {
@@ -283,6 +289,8 @@ function renderMarketSnapshot(snapshot) {
     return;
   }
   els.marketMood.textContent = snapshot.mood;
+  els.marketMood.className = `pill market-${snapshot.tone || "flat"}`;
+  els.marketGrid.className = `market-grid market-${snapshot.tone || "flat"}`;
   els.marketGrid.innerHTML = snapshot.indexes.map((item) => `
     <article>
       <span>${item.name}</span>
@@ -290,7 +298,7 @@ function renderMarketSnapshot(snapshot) {
       <em class="${cssMove(item.changePct)}">${percent(item.changePct)} · 成交额 ${formatWanYi(item.amount)}</em>
     </article>
   `).join("");
-  els.marketNote.textContent = `${snapshot.mood}，主要指数平均涨跌 ${percent(snapshot.avgChange)}。${snapshot.discipline}`;
+  els.marketNote.textContent = `${snapshot.mood}：上涨指数 ${snapshot.redCount || 0} 个，下跌指数 ${snapshot.blueCount || 0} 个，主要指数平均涨跌 ${percent(snapshot.avgChange)}，当日成交额约 ${formatWanYi(snapshot.totalAmount)}。${snapshot.discipline}`;
 }
 
 function average(values) {
@@ -725,22 +733,26 @@ function professionalSummary(data) {
   const hot = Number.isFinite(rsi) && rsi >= 72;
   const strongMoney = Number.isFinite(mainFlow) && mainFlow > 0;
   const weakMoney = Number.isFinite(mainFlow) && mainFlow < 0;
+  const marketCycle = market?.cycle || market?.mood || "市场未知";
   let stance = "震荡等待";
   let verdict = "方向不够清楚，先等关键位置给答案。";
   if (broken) {
-    stance = "偏弱防守";
+    stance = marketCycle === "熊市环境" ? "熊市防守" : "偏弱防守";
     verdict = `价格已经低于 MA20 ${fixed(ma20)}，当前重点不是找机会，而是确认风险有没有继续扩大。`;
   } else if (hot && nearPressure) {
     stance = "高位复核";
     verdict = `短线热度偏高，并且靠近60日压力 ${fixed(high60)}，这里更适合复核仓位和兑现纪律，不适合情绪追高。`;
-  } else if (state === "均线多头" && strongMoney && market?.mood !== "市场偏弱") {
+  } else if (state === "均线多头" && strongMoney && marketCycle === "牛市环境") {
+    stance = "牛市偏多";
+    verdict = `牛市环境叠加个股均线多头和资金流入，属于偏强观察对象；更适合顺势持有或等回踩加仓，不适合在压力位追高。`;
+  } else if (state === "均线多头" && strongMoney && marketCycle !== "熊市环境") {
     stance = "偏强观察";
     verdict = `趋势和资金暂时配合，属于可以继续观察强度的状态，但仍要看 ${fixed(high60)} 附近能否有效突破。`;
   } else if (state === "均线多头") {
     stance = "趋势观察";
     verdict = `均线结构偏强，但资金或市场背景验证还不够，不能直接升级成强机会。`;
-  } else if (market?.mood === "市场偏弱") {
-    stance = "弱市谨慎";
+  } else if (marketCycle === "熊市环境") {
+    stance = "熊市谨慎";
     verdict = "市场背景偏弱，个股即使反弹也先按修复看，重仓和破线项优先处理。";
   }
   const evidence = [
@@ -748,18 +760,20 @@ function professionalSummary(data) {
     `位置：MA10 ${fixed(ma10)}，MA20 ${fixed(ma20)}，60日压力 ${fixed(high60)}，当前价 ${fixed(price)}。`,
     `量能：${Number.isFinite(volumeRatio) ? `${fixed(volumeRatio, 2)} 倍20日均量` : "未取到"}；RSI ${fixed(rsi, 0)}。`,
     Number.isFinite(mainFlow) ? `资金：当日主力净流入 ${formatWanYi(mainFlow)}，占比 ${fixed(stock.mainNetInflowPct, 2)}%。` : "资金：未取到当日主力资金。",
-    market ? `市场：${market.mood}，主要指数平均 ${percent(market.avgChange)}。` : "市场：未取到指数背景。"
+    market ? `市场：${marketCycle}，主要指数平均 ${percent(market.avgChange)}，成交额约 ${formatWanYi(market.totalAmount)}，${market.amountLevel || "成交额待确认"}。` : "市场：未取到指数背景。"
   ];
   const counter = broken
     ? `反证条件：如果重新站回 MA20 ${fixed(ma20)}，并且量能不萎缩，偏弱判断可以降级为修复观察。`
     : `反证条件：如果跌破 MA20 ${fixed(ma20)} 且放量，原有观察逻辑降级；如果冲到 ${fixed(high60)} 附近但量能跟不上，说明压力仍重。`;
-  const action = broken
-    ? "规划：持有者先控制风险和仓位，空仓者等待重新站回风险线后再观察。"
+  const action = broken || marketCycle === "熊市环境"
+    ? "加减仓倾向：偏减仓/防守。持有者先控制风险和仓位，空仓者等待重新站回风险线后再观察。"
     : nearPressure || hot
-      ? "规划：持有者优先复核是否分批兑现或降低仓位，空仓者不追高。"
-      : weakMoney
-        ? "规划：价格没破线但资金偏谨慎，先观察资金是否连续转正。"
-        : "规划：继续观察关键线，不因为单日涨跌临时改变计划。";
+      ? "加减仓倾向：偏减仓复核。持有者优先复核是否分批兑现或降低仓位，空仓者不追高。"
+      : marketCycle === "牛市环境" && state === "均线多头" && strongMoney
+        ? "加减仓倾向：可加仓观察。只在回踩不破 MA10/MA20、资金继续流入时小幅增加，不在急拉后追。"
+        : weakMoney
+          ? "加减仓倾向：暂不加仓。价格没破线但资金偏谨慎，先观察资金是否连续转正。"
+          : "加减仓倾向：继续持有观察。围绕关键线，不因为单日涨跌临时改变计划。";
   return `
     <div class="stance-line"><span>${stance}</span>${verdict}</div>
     <ul>${evidence.map((item) => `<li>${item}</li>`).join("")}</ul>
@@ -1186,32 +1200,61 @@ function holdingPlan(item, risk) {
   const heavy = Number.isFinite(position) && position >= 50;
   const loss = Number.isFinite(profitPct) && profitPct < 0;
   const deepLoss = Number.isFinite(profitPct) && profitPct <= -8;
+  const marketCycle = marketSnapshot?.cycle || marketSnapshot?.mood || "市场未知";
+  const bull = marketCycle === "牛市环境";
+  const bear = marketCycle === "熊市环境";
+  const flat = marketCycle === "震荡市" || marketCycle === "市场震荡";
+  const strongTrend = trend(metrics || {}) === "均线多头" && aboveMa20 === true;
+  const weakTrend = trend(metrics || {}) === "均线空头" || aboveMa20 === false;
+  const moneyIn = Number.isFinite(quote.mainNetInflow) && quote.mainNetInflow > 0;
+  const moneyOut = Number.isFinite(quote.mainNetInflow) && quote.mainNetInflow < 0;
 
   if (heavy && loss && strongRebound) {
     return {
-      label: "借反弹降风险",
-      text: `这只的核心矛盾是：仓位已经很重（${fixed(position, 1)}%），今天虽然大涨 ${percent(quote.changePct)}，但你的账户仍是浮亏 ${percent(profitPct)}。这说明不是“机会来了”，而是前面买入成本和仓位压力还没解决。更合理的规划是把今天的反弹当作重新整理仓位的窗口：先停止继续加仓，设定一个你能接受的单只仓位上限；如果价格接近成本或压力位，优先考虑把仓位降回安全范围，而不是因为一天大涨就继续赌。`
+      label: "减仓降风险",
+      text: `市场状态：${marketCycle}。这只的核心矛盾是重仓浮亏：仓位 ${fixed(position, 1)}%，今日反弹 ${percent(quote.changePct)}，但仍相对成本 ${percent(profitPct)}。我的判断是借反弹修正仓位，而不是继续加。若靠近成本价、MA20 或60日压力位，优先把单只仓位降到自己能承受的范围；只有重新站稳风险线且资金持续流入，才把它从“风险处理”改回“持有观察”。`
+    };
+  }
+
+  if (bear && weakTrend) {
+    return {
+      label: "防守回避",
+      text: `市场状态：${marketCycle}，这只又处于弱趋势或跌破风险线。我的判断是先防守：不加仓，不摊平，优先看能否重新站回 MA20 ${metrics?.ma20 ? fixed(metrics.ma20) : "--"}。如果放量下跌或资金继续流出，应该把仓位往下压。`
+    };
+  }
+
+  if (bull && strongTrend && moneyIn && !heavy && !nearPressure && !deepLoss) {
+    return {
+      label: "可加仓观察",
+      text: `市场状态：${marketCycle}，个股趋势为均线多头，资金流入为正，且仓位没有过重。我的判断是可以列入加仓观察，但不是追高：优先等回踩 MA10 ${metrics?.ma10 ? fixed(metrics.ma10) : "--"} 或 MA20 ${metrics?.ma20 ? fixed(metrics.ma20) : "--"} 不破，再考虑小幅增加；如果追到60日压力 ${metrics?.high60 ? fixed(metrics.high60) : "--"} 附近，反而要谨慎。`
+    };
+  }
+
+  if (flat && nearPressure) {
+    return {
+      label: "压力位减仓",
+      text: `市场状态：${marketCycle}，不是单边牛市；个股接近60日压力 ${metrics?.high60 ? fixed(metrics.high60) : "--"}。我的判断是偏兑现而不是追买：持有者可复核是否降低一部分仓位，空仓者等突破后回踩确认，不在压力区情绪进场。`
     };
   }
 
   if (heavy && strongRebound) {
     return {
-      label: "重仓反弹复核",
-      text: `今天涨幅 ${percent(quote.changePct)}，短线情绪变强，但单只仓位约 ${fixed(position, 1)}%，组合风险仍集中。规划上不要把上涨自动理解成可以买更多，应该先看是否接近压力位 ${metrics?.high60 ? fixed(metrics.high60) : "--"}，并提前写好如果冲高回落要怎么处理。`
+      label: "减仓复核",
+      text: `市场状态：${marketCycle}。今天涨幅 ${percent(quote.changePct)}，但单只仓位约 ${fixed(position, 1)}%，组合风险集中。我的判断是上涨先用于复核仓位，不用于继续加码；若冲高到压力位 ${metrics?.high60 ? fixed(metrics.high60) : "--"} 附近但量能没有继续放大，应考虑降低集中度。`
     };
   }
 
   if (heavy && loss) {
     return {
-      label: "先处理重仓亏损",
-      text: `这只同时满足重仓和浮亏，问题优先级高于普通波动。现在最重要的不是猜明天涨跌，而是把“还能承受多少亏损”和“跌破哪条线就承认看错”写清楚。没有重新站稳风险线前，不建议继续摊低成本。`
+      label: "减仓降风险",
+      text: `市场状态：${marketCycle}。这只同时满足重仓和浮亏，问题优先级高于普通波动。我的判断是先降低账户对这一只的依赖，不要继续摊平；只有重新站稳 MA20 且资金转为连续流入，才恢复为持有观察。`
     };
   }
 
   if (risk.level === "high") {
     return {
-      label: "优先降风险",
-      text: `这只已经进入高风险队列。后续规划要先做减法：暂停新增投入，检查 ${metrics?.ma20 ? fixed(metrics.ma20) : "MA20"} 这条风险观察线是否有效；如果仓位超过自己原计划，先把仓位拉回计划内，再谈继续观察。`
+      label: "防守处理",
+      text: `市场状态：${marketCycle}。这只已经进入高风险队列。我的判断是先做减法：暂停新增投入，检查 ${metrics?.ma20 ? fixed(metrics.ma20) : "MA20"} 这条风险观察线是否有效；若仓位超计划，先降回计划内，再谈继续持有。`
     };
   }
   if (Number.isFinite(profitPct) && profitPct <= -8) {
@@ -1223,7 +1266,7 @@ function holdingPlan(item, risk) {
   if (Number.isFinite(position) && position > 35) {
     return {
       label: "控制仓位",
-      text: "单只仓位偏重，后续规划先以降低组合波动为主，不把更多资金继续集中到这一只。"
+      text: `市场状态：${marketCycle}。单只仓位 ${fixed(position, 1)}% 偏重。我的判断是：牛市里也不能让一只股票决定全家账户，后续以降低集中度为主，不再把新增资金继续集中到这一只。`
     };
   }
   if (Number.isFinite(profitPct) && profitPct >= 12 && nearPressure) {
@@ -1234,19 +1277,25 @@ function holdingPlan(item, risk) {
   }
   if (aboveMa20 === false) {
     return {
-      label: "破线观察",
-      text: "价格在 MA20 风险观察线下方，先不要急着加仓，重点看能否重新站回观察线。"
+      label: "防守回避",
+      text: `市场状态：${marketCycle}。价格在 MA20 风险观察线下方，说明中期纪律已经受损。我的判断是不加仓，先等重新站回 ${metrics?.ma20 ? fixed(metrics.ma20) : "--"}；若市场同时偏弱，应该降低仓位暴露。`
+    };
+  }
+  if (bull && strongTrend && !moneyOut && !heavy) {
+    return {
+      label: "继续持有偏多",
+      text: `市场状态：${marketCycle}，个股趋势未破坏。我的判断是继续持有偏多，但加仓要等回踩确认，不追日内拉升；若跌破 MA20 ${metrics?.ma20 ? fixed(metrics.ma20) : "--"}，立刻降级为风险观察。`
     };
   }
   if (metrics?.ma10 && quote.price > metrics.ma10 * 1.08) {
     return {
       label: "等待回踩",
-      text: "短线离均线偏远，空仓不要追，已持有也先看量能和回踩承接。"
+      text: `市场状态：${marketCycle}。短线离 MA10 偏远，空仓不要追，已持有看量能和回踩承接；如果牛市环境继续放量，可以保留观察，但加仓仍等回踩。`
     };
   }
   return {
     label: "继续持有观察",
-    text: `当前没有明显破坏纪律的信号。后续规划是：继续盯成本价 ${item.cost || "--"}、风险线 ${metrics?.ma20 ? fixed(metrics.ma20) : "--"} 和仓位比例 ${Number.isFinite(position) ? `${fixed(position, 1)}%` : "--"}，不因为单日波动改计划。`
+    text: `市场状态：${marketCycle}。当前没有明显破坏纪律的信号。我的判断是继续持有观察：盯成本价 ${item.cost || "--"}、风险线 ${metrics?.ma20 ? fixed(metrics.ma20) : "--"}、压力位 ${metrics?.high60 ? fixed(metrics.high60) : "--"} 和仓位 ${Number.isFinite(position) ? `${fixed(position, 1)}%` : "--"}。`
   };
 }
 

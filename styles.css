@@ -1300,3 +1300,187 @@ body {
   .account-grid strong, .market-grid strong { font-size: 24px; }
   .bottom-tabs button { font-size: 15px; }
 }
+
+/* v20: stronger iOS pro trading surface */
+body {
+  background:
+    linear-gradient(180deg, #ffffff 0, #f4f6f8 145px, #edf1f5 100%);
+}
+
+.hero-head {
+  align-items: center;
+}
+
+.eyebrow {
+  color: #0f766e;
+  font-weight: 950;
+}
+
+.hero-head h1 {
+  font-size: 36px;
+  color: #050816;
+}
+
+.hero-card {
+  min-height: 238px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background:
+    linear-gradient(150deg, #050816 0%, #111827 48%, #123b45 100%);
+}
+
+.hero-card .panel-title h2 {
+  font-size: 31px;
+}
+
+.hero-card .insight-copy {
+  margin-top: 16px;
+  border: 0;
+  background: rgba(255,255,255,.08);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.12);
+}
+
+.primary-action {
+  color: #03110d;
+  background: linear-gradient(180deg, #6ee7b7, #34d399);
+}
+
+.secondary-action {
+  color: #fff;
+}
+
+.market-panel {
+  background: #0b1020;
+  color: #f8fafc;
+  border: 0;
+}
+
+.market-panel .panel-title h2,
+.market-panel .panel-title p {
+  color: inherit;
+}
+
+.market-panel .pill {
+  color: #d1fae5;
+  background: rgba(16,185,129,.16);
+  border-color: rgba(110,231,183,.28);
+}
+
+.market-grid article {
+  color: #f8fafc;
+  background: rgba(255,255,255,.07);
+  border-color: rgba(255,255,255,.12);
+}
+
+.market-grid span,
+.market-grid em {
+  color: rgba(248,250,252,.72);
+}
+
+.market-note {
+  color: #dbeafe;
+  background: rgba(59,130,246,.12);
+  border-color: rgba(147,197,253,.22);
+}
+
+.account-panel {
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+}
+
+.account-grid article:first-child {
+  grid-column: span 2;
+  min-height: 126px;
+  background: #111827;
+  color: #fff;
+}
+
+.account-grid article:first-child span,
+.account-grid article:first-child em {
+  color: rgba(255,255,255,.68);
+}
+
+.account-grid article:first-child strong {
+  font-size: 36px;
+}
+
+.warning-panel {
+  border-color: #f8d5d8;
+}
+
+.score-panel {
+  border-color: #bae6fd;
+}
+
+.report-panel .panel-title h2::after,
+.warning-panel .panel-title h2::after,
+.holdings-panel .panel-title h2::after {
+  content: "";
+  display: block;
+  width: 38px;
+  height: 4px;
+  margin-top: 8px;
+  border-radius: 999px;
+  background: #111827;
+}
+
+.pro-summary {
+  padding: 20px;
+  background:
+    linear-gradient(150deg, #050816, #111827 52%, #164e63);
+}
+
+.bottom-tabs {
+  box-shadow: 0 -18px 38px rgba(15,23,42,.10);
+}
+
+@media (max-width: 560px) {
+  .hero-card { min-height: 252px; }
+  .hero-card .panel-title h2 { font-size: 29px; }
+  .account-grid article:first-child { grid-column: 1 / -1; }
+}
+
+/* v21 market truth and trading color logic */
+.market-panel .pill.market-good {
+  color: #fee2e2;
+  background: rgba(239, 68, 68, .18);
+  border-color: rgba(248, 113, 113, .34);
+}
+
+.market-panel .pill.market-bad {
+  color: #dbeafe;
+  background: rgba(59, 130, 246, .18);
+  border-color: rgba(96, 165, 250, .34);
+}
+
+.market-panel .pill.market-flat {
+  color: #e5e7eb;
+  background: rgba(148, 163, 184, .16);
+  border-color: rgba(203, 213, 225, .24);
+}
+
+.market-grid.market-good article::after {
+  background: linear-gradient(90deg, #ef4444, #fb7185);
+}
+
+.market-grid.market-bad article::after {
+  background: linear-gradient(90deg, #2563eb, #38bdf8);
+}
+
+.market-grid.market-flat article::after {
+  background: linear-gradient(90deg, #64748b, #cbd5e1);
+}
+
+.market-good .num-red,
+.market-grid.market-good strong {
+  color: #fca5a5;
+}
+
+.market-bad .num-green,
+.market-grid.market-bad strong {
+  color: #93c5fd;
+}
+
+.plan-box strong {
+  color: #ffffff;
+}

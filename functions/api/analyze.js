@@ -234,26 +234,32 @@ async function fetchMarketSnapshot() {
   }));
   const valid = results.filter((item) => Number.isFinite(item.changePct));
   const avgChange = avg(valid.map((item) => item.changePct));
+  const totalAmount = valid.reduce((sum, item) => sum + (Number.isFinite(item.amount) ? item.amount : 0), 0);
+  const amountLevel = !totalAmount ? "成交额未知" : totalAmount >= 1200000000000 ? "放量活跃" : totalAmount >= 800000000000 ? "量能正常" : "成交偏弱";
   const strongCount = valid.filter((item) => item.changePct >= 0.5).length;
   const weakCount = valid.filter((item) => item.changePct <= -0.5).length;
-  const mood = !valid.length
-    ? "数据不足"
-    : strongCount >= 3
-      ? "市场偏强"
-      : weakCount >= 3
-        ? "市场偏弱"
-        : "市场震荡";
-  const discipline = mood === "市场偏弱"
-    ? "市场背景偏弱时，个股反弹更要看是否放量站稳，重仓不宜把单日上涨当作趋势反转。"
-    : mood === "市场偏强"
-      ? "市场背景偏强时，个股上涨需要区分是大盘带动还是自身逻辑改善，接近压力位仍要看量能。"
-      : mood === "市场震荡"
-        ? "市场震荡时，纪律线比情绪更重要，优先处理破线和重仓项。"
-        : "指数数据未取到，本轮市场背景判断降级。";
+  const redCount = valid.filter((item) => item.changePct > 0).length;
+  const blueCount = valid.filter((item) => item.changePct < 0).length;
+  let cycle = "震荡市";
+  if (strongCount >= 3 && avgChange >= 0.7 && totalAmount >= 800000000000) cycle = "牛市环境";
+  if (weakCount >= 3 || (avgChange <= -0.7 && blueCount >= redCount)) cycle = "熊市环境";
+  const mood = valid.length ? cycle : "数据不足";
+  const tone = cycle === "牛市环境" ? "good" : cycle === "熊市环境" ? "bad" : "flat";
+  const discipline = cycle === "熊市环境"
+    ? `熊市或弱市里，第一目标是活下来：重仓先降风险，破线股少幻想，反弹先看修复不看反转。今日${amountLevel}，总成交额约 ${fmtMoney(totalAmount)}。`
+    : cycle === "牛市环境"
+      ? `牛市或强市里，可以提高观察积极度：强趋势、资金流入、回踩不破线的票优先；但高位放量滞涨仍要减仓复核。今日${amountLevel}，总成交额约 ${fmtMoney(totalAmount)}。`
+      : `震荡市里，少做追涨杀跌：围绕 MA20 风险线和60日压力做加减仓判断。今日${amountLevel}，总成交额约 ${fmtMoney(totalAmount)}。`;
   return {
     indexes: results,
     avgChange,
+    totalAmount,
+    amountLevel,
+    redCount,
+    blueCount,
+    cycle,
     mood,
+    tone,
     discipline,
     source: "东方财富指数行情",
     updatedAt: new Date().toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" })

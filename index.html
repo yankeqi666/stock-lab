@@ -10,13 +10,13 @@
     <div class="app-shell">
       <header class="hero-head">
         <div>
-          <span class="eyebrow">STOCK LAB</span>
-          <h1>持仓风险工作台</h1>
-          <p id="lastUpdate">打开就能复盘 · 等待刷新</p>
+          <span class="eyebrow">STOCK LAB PRO · v21</span>
+          <h1>操盘复盘台</h1>
+          <p id="lastUpdate">专业判断版 · 等待刷新</p>
           <div class="trust-row">
-            <span>免费可用</span>
-            <span>本地保存</span>
-            <span>不自动交易</span>
+            <span>收盘复盘</span>
+            <span>仓位纪律</span>
+            <span>风险观察线</span>
           </div>
         </div>
         <button class="refresh-btn" id="refreshBtn" type="button">刷新</button>
@@ -26,18 +26,18 @@
         <section class="hero-card">
           <div class="panel-title">
             <div>
-              <h2>今天先看哪里</h2>
-              <p>先看账户风险，再看单只股票</p>
+              <h2>今天该处理什么</h2>
+              <p>市场背景、重仓风险、破线信号一起看</p>
             </div>
             <span class="pill ok" id="healthPill">等待数据</span>
           </div>
           <div class="insight-copy" id="portfolioInsight">
-            保存或导入持仓后，这里会直接告诉你今天最需要复核什么。
+            先刷新市场温度，再看持仓里有没有“重仓、破线、浮亏扩大、冲高过热”的项目。系统会给明确判断和反证条件。
           </div>
           <div class="quick-actions">
-            <button class="primary-action" type="button" data-focus="stockInput">查一只股票</button>
-            <button class="secondary-action" type="button" data-focus="costInput">添加持仓</button>
-            <button class="secondary-action" type="button" id="quickRefreshBtn">刷新提醒</button>
+            <button class="primary-action" type="button" id="quickRefreshBtn">刷新全局</button>
+            <button class="secondary-action" type="button" data-focus="stockInput">个股分析</button>
+            <button class="secondary-action" type="button" data-focus="costInput">录入持仓</button>
           </div>
           <div class="demo-actions">
             <button type="button" id="demoBtn">先看演示组合</button>
