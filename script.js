@@ -109,6 +109,7 @@ let watchQuotes = {};
 let lastEnrichedHoldings = [];
 let watchTimer = null;
 let marketSnapshot = null;
+let holdingDeepData = {};
 
 function loadJson(key, fallback) {
   try {
@@ -928,6 +929,37 @@ function renderIndustryTrend(industryTrend) {
   return `${industryTrend.name}：${industryTrend.mood}。板块涨跌 ${percent(industryTrend.changePct)}，成交额 ${formatWanYi(industryTrend.amount)}，主力资金 ${formatWanYi(industryTrend.mainNetInflow)}，排名 ${industryTrend.rank || "--"}/${industryTrend.total || "--"}。`;
 }
 
+function renderHoldingDeepStatus(deep) {
+  if (!deep) {
+    return `
+      <span>深度数据</span>
+      <ul>
+        <li>公告原文入口：等待个股深度接口返回。</li>
+        <li>财报细项：等待个股深度接口返回。</li>
+        <li>行业景气数据：等待个股深度接口返回。</li>
+      </ul>
+    `;
+  }
+  const announcement = deep.announcements?.find((item) => item.url) || deep.announcements?.[0];
+  const announcementText = announcement
+    ? `${announcement.date ? `${announcement.date}：` : ""}${announcement.url ? `<a href="${announcement.url}" target="_blank" rel="noopener noreferrer">${announcement.title}</a>` : announcement.title}`
+    : "未取到公告入口";
+  const financeText = deep.finance
+    ? `报告期 ${deep.finance.reportDate || "--"}，EPS ${fixed(deep.finance.eps, 3)}，毛利率 ${percent(deep.finance.grossMargin)}，净利率 ${percent(deep.finance.netMargin)}，资产负债率 ${percent(deep.finance.debtAssetRatio)}。`
+    : "未取到财报细项";
+  const industryText = deep.industryTrend
+    ? `${deep.industryTrend.name}，${deep.industryTrend.mood}，涨跌 ${percent(deep.industryTrend.changePct)}，主力资金 ${formatWanYi(deep.industryTrend.mainNetInflow)}。`
+    : "未取到行业景气数据";
+  return `
+    <span>深度数据</span>
+    <ul>
+      <li>公告原文入口：${announcementText}</li>
+      <li>财报细项：${financeText}</li>
+      <li>行业景气数据：${industryText}</li>
+    </ul>
+  `;
+}
+
 function renderValidation(validation) {
   if (!validation?.checks?.length) return "";
   return `<ul>${validation.checks.map((item) => `<li>${item.ok ? "通过" : "需复核"}：${item.name}，${item.text}</li>`).join("")}</ul>`;
@@ -970,6 +1002,18 @@ async function analyze(input) {
       submitButton.disabled = false;
       submitButton.textContent = "分析";
     }
+  }
+}
+
+async function fetchHoldingDeepData(code) {
+  try {
+    const response = await fetch(`/api/analyze?code=${encodeURIComponent(code)}`);
+    if (!response.ok) throw new Error("深度数据接口失败");
+    const data = await response.json();
+    if (data?.error) throw new Error(data.error);
+    return data;
+  } catch {
+    return null;
   }
 }
 
@@ -1294,7 +1338,17 @@ async function refreshHoldings() {
     } catch {
       metrics = null;
     }
-    enriched.push({ ...item, quote, metrics });
+    if (els.refreshState) {
+      els.refreshState.textContent = `正在补充 ${item.name} 的公告、财报和行业数据...`;
+    }
+    let deep = holdingDeepData[item.code] || null;
+    try {
+      deep = await fetchHoldingDeepData(item.code);
+      if (deep) holdingDeepData[item.code] = deep;
+    } catch {
+      deep = holdingDeepData[item.code] || null;
+    }
+    enriched.push({ ...item, quote, metrics, deep });
   }
   lastEnrichedHoldings = enriched;
   renderHoldings();
@@ -1521,7 +1575,6 @@ function recommendationEvidence(item, risk, plan) {
   }
   if (quote.industry) evidence.push(`行业/概念字段：${quote.industry}。`);
   else missing.push("行业字段");
-  evidence.push("公告原文、财报细项、行业景气在个股深度分析页展开。");
   if (risk.level === "high") score += 8;
   if (/借反弹|降风险|暂停|控制/.test(plan.label)) score += 6;
   score = Math.max(0, Math.min(92, Math.round(score - Math.min(missing.length, 5) * 4)));
@@ -1549,6 +1602,9 @@ function renderHoldingWarnings(items) {
     const profitPct = quote && item.cost ? ((quote.price - item.cost) / item.cost) * 100 : null;
     const position = marketValue && item.portfolio ? (marketValue / item.portfolio) * 100 : null;
     const riskLine = metrics?.ma20;
+    const missingHtml = explain.missing.length
+      ? `<span>缺失数据</span><ul>${explain.missing.slice(0, 5).map((text) => `<li>${text}</li>`).join("")}</ul>`
+      : "";
     return `
       <article class="warning-card risk-${risk.level}">
         <div class="warning-head">
@@ -1573,8 +1629,8 @@ function renderHoldingWarnings(items) {
           <strong>建议置信度：${explain.confidence}（${explain.score}/100）</strong>
           <span>主要依据</span>
           <ul>${explain.evidence.slice(0, 5).map((text) => `<li>${text}</li>`).join("")}</ul>
-          <span>缺失数据</span>
-          <ul>${explain.missing.slice(0, 5).map((text) => `<li>${text}</li>`).join("")}</ul>
+          ${renderHoldingDeepStatus(item.deep)}
+          ${missingHtml}
         </div>
         <p class="warning-note">${risk.text}。先复核原因和仓位，不要凭当天情绪操作。</p>
       </article>
