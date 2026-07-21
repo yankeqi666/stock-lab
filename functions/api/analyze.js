@@ -277,57 +277,57 @@ function validateData(quote, metrics, news, extra = {}) {
     : null;
   const checks = [
     {
-      name: "琛屾儏-K绾夸竴鑷存€?,
+      name: "行情-K线一致性",
       ok: priceGap === null || priceGap < 1.5,
-      text: priceGap === null ? "鏁版嵁涓嶈冻锛屾殏鏃犳硶鏍￠獙銆? : `琛屾儏浠蜂笌鏈€杩慘绾挎敹鐩樹环鐩稿樊 ${fmtPct(priceGap)}銆俙
+      text: priceGap === null ? "数据不足，暂时无法校验。" : `行情价与最近K线收盘价相差 ${fmtPct(priceGap)}。`
     },
     {
-      name: "鍘嗗彶K绾挎牱鏈?,
+      name: "历史K线样本",
       ok: metrics.rows.length >= 80,
-      text: `褰撳墠鍙敤K绾挎牱鏈?${metrics.rows.length} 鏉°€俙
+      text: `当前可用K线样本 ${metrics.rows.length} 条。`
     },
     {
-      name: "褰撴棩璧勯噾瀛楁",
+      name: "当日资金字段",
       ok: Number.isFinite(quote.mainNetInflow),
-      text: Number.isFinite(quote.mainNetInflow) ? `涓诲姏鍑€娴佸叆绾?${fmtMoney(quote.mainNetInflow)}锛屽崰姣?${fmt(quote.mainNetInflowPct, 2)}%銆俙 : "鍏嶈垂鎺ュ彛鏈繑鍥炲綋鏃ヨ祫閲戞祦瀛楁銆?
+      text: Number.isFinite(quote.mainNetInflow) ? `主力净流入约 ${fmtMoney(quote.mainNetInflow)}，占比 ${fmt(quote.mainNetInflowPct, 2)}%。` : "免费接口未返回当日资金流字段。"
     },
     {
-      name: "鍘嗗彶璧勯噾娴佽鐩?,
+      name: "历史资金流覆盖",
       ok: moneyFlow.length >= 3,
-      text: moneyFlow.length ? `鎶撳埌 ${moneyFlow.length} 澶╁巻鍙茶祫閲戞祦銆俙 : "鏈姄鍒板巻鍙茶祫閲戞祦锛屽彧鑳界敤褰撴棩璧勯噾瀛楁銆?
+      text: moneyFlow.length ? `抓到 ${moneyFlow.length} 天历史资金流。` : "未抓到历史资金流，只能使用当日资金字段。"
     },
     {
-      name: "鏂伴椈瑕嗙洊",
+      name: "新闻覆盖",
       ok: news.length > 0,
-      text: news.length ? `鎶撳埌 ${news.length} 鏉¤繎鏈熸秷鎭爣棰樸€俙 : "鏈姄鍒拌繎鏈熸柊闂伙紝涓嶈兘寮鸿鍒ゆ柇娑堟伅闈€?
+      text: news.length ? `抓到 ${news.length} 条近期消息标题。` : "未抓到近期新闻，不能强行判断消息面。"
     },
     {
-      name: "鍏憡绾跨储瑕嗙洊",
+      name: "公告线索覆盖",
       ok: announcements.length > 0,
-      text: announcements.length ? `鎶撳埌 ${announcements.length} 鏉″叕鍛?璐㈡姤绾跨储銆俙 : "鏈姄鍒板叕鍛婄嚎绱紝鍏憡闈㈠彧鑳芥彁绀虹己澶便€?
+      text: announcements.length ? `抓到 ${announcements.length} 条公告/财报线索。` : "未抓到公告线索，公告面只能提示缺失。"
     },
     {
-      name: "璐㈠姟鎽樿瑕嗙洊",
+      name: "财务摘要覆盖",
       ok: !!finance,
-      text: finance ? `鎶撳埌鏈€杩戜竴鏈熻储鍔℃憳瑕侊細${finance.reportDate || "鏃ユ湡鏈繑鍥?}銆俙 : "鏈姄鍒拌储鍔℃憳瑕侊紝鐩堝埄璐ㄩ噺涓嶈兘涓嬪己缁撹銆?
+      text: finance ? `抓到最近一期财务摘要：${finance.reportDate || "日期未返回"}。` : "未抓到财务摘要，盈利质量不能下强结论。"
     },
     {
-      name: "琛屼笟瀛楁瑕嗙洊",
+      name: "行业字段覆盖",
       ok: !!quote.industry,
-      text: quote.industry ? `琛屾儏鎺ュ彛杩斿洖琛屼笟/姒傚康瀛楁锛?{quote.industry}銆俙 : "鏈彇鍒拌涓氬瓧娈碉紝琛屼笟鏅皵闇€瑕佸閮ㄦ牳瀵广€?
+      text: quote.industry ? `行情接口返回行业/概念字段：${quote.industry}。` : "未取到行业字段，行业景气需要外部核对。"
     },
     {
-      name: "甯傚満鑳屾櫙瑕嗙洊",
+      name: "市场背景覆盖",
       ok: hasMarket,
-      text: hasMarket ? `鎸囨暟鑳屾櫙锛?{market.mood}锛屽钩鍧囨定璺?${fmtPct(market.avgChange)}銆俙 : "鎸囨暟鑳屾櫙鏈彇鍒帮紝涓嶈兘鍒ゆ柇澶х洏鐜銆?
+      text: hasMarket ? `指数背景：${market.mood}，主要指数平均涨跌 ${fmtPct(market.avgChange)}。` : "指数背景未取到，不能判断大盘环境。"
     }
   ];
   const passed = checks.filter((item) => item.ok).length;
   return {
     score: Math.round(passed / checks.length * 100),
-    level: passed >= 8 ? "杈冨彲鐢? : passed >= 6 ? "涓瓑鍙俊" : passed >= 4 ? "闇€澶嶆牳" : "鏁版嵁涓嶈冻",
+    level: passed >= 8 ? "较可用" : passed >= 6 ? "中等可信" : passed >= 4 ? "需复核" : "数据不足",
     checks,
-    sources: ["涓滄柟璐㈠瘜鍏紑琛屾儏鎺ュ彛", "涓滄柟璐㈠瘜鍘嗗彶K绾挎帴鍙?, "涓滄柟璐㈠瘜鎼滅储", "涓滄柟璐㈠瘜鏁版嵁涓績", "涓滄柟璐㈠瘜鍘嗗彶璧勯噾娴?, "涓滄柟璐㈠瘜鎸囨暟琛屾儏"]
+    sources: ["东方财富公开行情接口", "东方财富历史K线接口", "东方财富搜索", "东方财富数据中心", "东方财富历史资金流", "东方财富指数行情"]
   };
 }
 
