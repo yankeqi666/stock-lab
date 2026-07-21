@@ -671,6 +671,7 @@ function renderCloudAnalysis(data) {
     <section class="report-section"><strong>建议置信度</strong><br>${stockConfidenceSection(data)}</section>
     <section class="report-section"><strong>市场背景</strong><br>${data.report.market || "指数快照未取到，本次市场背景判断降级。"}</section>
     <section class="report-section"><strong>一、周期框架</strong><br>${data.report.cycle}</section>
+    <section class="report-section"><strong>行业景气</strong><br>${data.report.industry || renderIndustryTrend(data.industryTrend)}</section>
     <section class="report-section"><strong>二、K线执行框架</strong><br>${data.report.technical}</section>
     <section class="report-section"><strong>三、资金和估值</strong><br>${data.report.capital || "资金流数据不足。"}${renderMoneyFlowLines(data.moneyFlow)}<br>市值：${formatWanYi(stock.marketCap)}；市盈率：${fixed(stock.pe, 2)}。</section>
     <section class="report-section"><strong>四、财报摘要</strong><br>${data.report.finance || "公开源未取到财务摘要。"}${renderFinanceBox(data.finance)}</section>
@@ -710,7 +711,13 @@ function stockConfidenceSection(data) {
   } else {
     missing.push("多数据源校验");
   }
-  missing.push("公告原文逐字核对", "龙虎榜明细", "机构持仓变化");
+  if (data.announcements?.some((item) => item.url)) evidence.push("已抓到公告原文入口/详情页链接。");
+  else missing.push("公告原文入口");
+  if (hasFinanceDetails(data.finance)) evidence.push("已抓到财报细项字段。");
+  else missing.push("财报细项");
+  if (data.industryTrend) evidence.push(`有行业景气代理数据：${data.industryTrend.name}，${data.industryTrend.mood}。`);
+  else missing.push("行业景气数据");
+  missing.push("龙虎榜明细", "机构持仓变化");
   const confidence = validation?.score >= 75 ? "高" : validation?.score >= 50 ? "中" : "低";
   return `
     当前建议置信度：${confidence}。<br>
@@ -881,7 +888,11 @@ function renderAnnouncementLines(list = []) {
   if (!list.length) return "<p class=\"muted-text\">公告/财报线索未取到，不能把消息面当成强依据。</p>";
   return `
     <p class="muted-text">公告/财报线索：</p>
-    <ul>${list.slice(0, 5).map((item) => `<li>${item.date ? `${item.date}：` : ""}${item.title}</li>`).join("")}</ul>
+    <ul>${list.slice(0, 5).map((item) => {
+      const prefix = item.date ? `${item.date}：` : "";
+      const title = item.url ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">${item.title}</a>` : item.title;
+      return `<li>${prefix}${title} <span class="muted-text">（${item.source || "公开公告源"}）</span></li>`;
+    }).join("")}</ul>
   `;
 }
 
@@ -901,8 +912,20 @@ function renderFinanceBox(finance) {
       <li>营收：${formatWanYi(finance.revenue)}，同比 ${percent(finance.revenueYoY)}</li>
       <li>归母净利润：${formatWanYi(finance.netProfit)}，同比 ${percent(finance.profitYoY)}</li>
       <li>ROE：${percent(finance.roe)}</li>
+      <li>EPS：${fixed(finance.eps, 3)}；毛利率：${percent(finance.grossMargin)}；净利率：${percent(finance.netMargin)}</li>
+      <li>资产负债率：${percent(finance.debtAssetRatio)}；经营现金流：${formatWanYi(finance.cashFlow)}</li>
     </ul>
   `;
+}
+
+function hasFinanceDetails(finance) {
+  if (!finance) return false;
+  return [finance.eps, finance.grossMargin, finance.netMargin, finance.debtAssetRatio, finance.cashFlow].some(Number.isFinite);
+}
+
+function renderIndustryTrend(industryTrend) {
+  if (!industryTrend) return "行业板块行情未取到，行业景气判断降级。";
+  return `${industryTrend.name}：${industryTrend.mood}。板块涨跌 ${percent(industryTrend.changePct)}，成交额 ${formatWanYi(industryTrend.amount)}，主力资金 ${formatWanYi(industryTrend.mainNetInflow)}，排名 ${industryTrend.rank || "--"}/${industryTrend.total || "--"}。`;
 }
 
 function renderValidation(validation) {
@@ -1496,7 +1519,9 @@ function recommendationEvidence(item, risk, plan) {
   } else {
     missing.push("资金流细项");
   }
-  missing.push("最新公告原文", "财报细项", "行业景气数据");
+  if (quote.industry) evidence.push(`行业/概念字段：${quote.industry}。`);
+  else missing.push("行业字段");
+  evidence.push("公告原文、财报细项、行业景气在个股深度分析页展开。");
   if (risk.level === "high") score += 8;
   if (/借反弹|降风险|暂停|控制/.test(plan.label)) score += 6;
   score = Math.max(0, Math.min(92, Math.round(score - Math.min(missing.length, 5) * 4)));

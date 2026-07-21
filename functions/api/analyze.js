@@ -26,14 +26,15 @@ async function handle(input) {
     const quote = await fetchQuote(input);
     const rows = await fetchHistory(quote.code);
     const metrics = calcMetrics(rows);
-    const [news, announcements, finance, moneyFlow, market] = await Promise.all([
+    const [news, announcements, finance, moneyFlow, market, industryTrend] = await Promise.all([
       fetchNews(quote),
       fetchAnnouncements(quote),
       fetchFinance(quote),
       fetchMoneyFlowHistory(quote),
-      fetchMarketSnapshot()
+      fetchMarketSnapshot(),
+      fetchIndustryTrend(quote)
     ]);
-    const extra = { announcements, finance, moneyFlow, market };
+    const extra = { announcements, finance, moneyFlow, market, industryTrend };
     const validation = validateData(quote, metrics, news, extra);
     const payload = {
       quote,
@@ -43,6 +44,7 @@ async function handle(input) {
       finance,
       moneyFlow,
       market,
+      industryTrend,
       validation,
       score: scoreOf(quote, metrics),
       label: labelFor(quote, metrics),
@@ -142,6 +144,8 @@ async function fetchNews(quote) {
 }
 
 async function fetchAnnouncements(quote) {
+  const direct = await fetchAnnouncementList(quote);
+  if (direct.length) return direct;
   try {
     const keyword = encodeURIComponent(`${quote.name} ${quote.code} 公告 财报`);
     const url = `https://search-api-web.eastmoney.com/search/jsonp?cb=callback&param=${keyword}`;
@@ -161,8 +165,28 @@ async function fetchAnnouncements(quote) {
       .map((item) => ({
         title: item.title || item.Title || "未命名公告线索",
         date: item.showTime || item.publishTime || item.date || "",
+        url: item.url || item.Url || item.link || "",
         source: "东方财富公告/资讯搜索"
       }));
+  } catch {
+    return [];
+  }
+}
+
+async function fetchAnnouncementList(quote) {
+  try {
+    const url = `https://np-anotice-stock.eastmoney.com/api/security/ann?sr=-1&page_size=8&page_index=1&ann_type=A&client_source=web&stock_list=${encodeURIComponent(quote.code)}`;
+    const data = await eastmoney(url);
+    const rows = data?.data?.list || data?.data || [];
+    return rows.slice(0, 8).map((item) => {
+      const code = item.art_code || item.notice_id || item.INFO_CODE || "";
+      return {
+        title: item.title || item.NOTICE_TITLE || item.notice_title || "未命名公告",
+        date: item.notice_date || item.eiTime || item.NOTICE_DATE || "",
+        url: item.attach_url || item.url || (code ? `https://data.eastmoney.com/notices/detail/${quote.code}/${code}.html` : ""),
+        source: "东方财富公告原文索引"
+      };
+    }).filter((item) => item.title);
   } catch {
     return [];
   }
@@ -182,6 +206,11 @@ async function fetchFinance(quote) {
       revenueYoY: num(row.TOTAL_OPERATE_INCOME_YOY || row.OPERATE_INCOME_YOY),
       profitYoY: num(row.PARENT_NETPROFIT_YOY || row.NETPROFIT_YOY),
       roe: num(row.WEIGHTAVG_ROE || row.ROE),
+      eps: num(row.BASIC_EPS),
+      grossMargin: num(row.GROSS_PROFIT_RATIO || row.XSMLL),
+      netMargin: num(row.NET_PROFIT_RATIO || row.SALE_NETPROFIT_RATIO),
+      debtAssetRatio: num(row.ASSET_LIAB_RATIO),
+      cashFlow: num(row.NETCASH_OPERATE || row.MANANETR),
       source: "东方财富数据中心财务摘要"
     };
   } catch {
@@ -206,6 +235,46 @@ async function fetchMoneyFlowHistory(quote) {
     }).filter((item) => item.date);
   } catch {
     return [];
+  }
+}
+
+async function fetchIndustryTrend(quote) {
+  try {
+    const fields = "f12,f14,f2,f3,f5,f6,f20,f62,f128";
+    const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=120&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:90+t:2&fields=${fields}`;
+    const rows = (await eastmoney(url)).data?.diff || [];
+    const industryName = String(quote.industry || "").trim();
+    const matched = rows.find((row) => {
+      const name = String(row.f14 || "");
+      return industryName && (name.includes(industryName) || industryName.includes(name));
+    }) || rows[0];
+    if (!matched) return null;
+    const changePct = num(matched.f3);
+    const mainNetInflow = num(matched.f62);
+    const amount = num(matched.f6);
+    const rank = rows.findIndex((row) => row.f12 === matched.f12) + 1;
+    const hotCount = rows.filter((row) => num(row.f3) > 0).length;
+    const coldCount = rows.filter((row) => num(row.f3) < 0).length;
+    const mood = changePct >= 1.5 && mainNetInflow > 0
+      ? "行业景气偏强"
+      : changePct <= -1.5 || mainNetInflow < 0
+        ? "行业景气偏弱"
+        : "行业景气中性";
+    return {
+      code: matched.f12 || "",
+      name: matched.f14 || industryName || "行业板块",
+      changePct,
+      amount,
+      mainNetInflow,
+      rank,
+      total: rows.length,
+      hotCount,
+      coldCount,
+      mood,
+      source: "东方财富行业板块行情"
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -271,7 +340,10 @@ function validateData(quote, metrics, news, extra = {}) {
   const finance = extra.finance || null;
   const moneyFlow = extra.moneyFlow || [];
   const market = extra.market || null;
+  const industryTrend = extra.industryTrend || null;
   const hasMarket = !!market?.indexes?.some((item) => Number.isFinite(item.changePct));
+  const hasFinanceDetails = !!finance && [finance.eps, finance.grossMargin, finance.netMargin, finance.debtAssetRatio, finance.cashFlow].some(Number.isFinite);
+  const hasAnnouncementLinks = announcements.some((item) => item.url);
   const priceGap = Number.isFinite(quote.price) && Number.isFinite(metrics.close)
     ? Math.abs(quote.price - metrics.close) / Math.max(quote.price, 0.01) * 100
     : null;
@@ -307,14 +379,29 @@ function validateData(quote, metrics, news, extra = {}) {
       text: announcements.length ? `抓到 ${announcements.length} 条公告/财报线索。` : "未抓到公告线索，公告面只能提示缺失。"
     },
     {
+      name: "公告原文入口",
+      ok: hasAnnouncementLinks,
+      text: hasAnnouncementLinks ? "已抓到公告原文入口或详情页链接。" : "未抓到公告原文入口，只能展示公告标题线索。"
+    },
+    {
       name: "财务摘要覆盖",
       ok: !!finance,
       text: finance ? `抓到最近一期财务摘要：${finance.reportDate || "日期未返回"}。` : "未抓到财务摘要，盈利质量不能下强结论。"
     },
     {
+      name: "财报细项覆盖",
+      ok: hasFinanceDetails,
+      text: hasFinanceDetails ? "已抓到 EPS、毛利率、净利率、资产负债率或经营现金流等细项。" : "财报细项不足，只能看营收和利润摘要。"
+    },
+    {
       name: "行业字段覆盖",
       ok: !!quote.industry,
       text: quote.industry ? `行情接口返回行业/概念字段：${quote.industry}。` : "未取到行业字段，行业景气需要外部核对。"
+    },
+    {
+      name: "行业景气代理数据",
+      ok: !!industryTrend,
+      text: industryTrend ? `${industryTrend.name}：${industryTrend.mood}，板块涨跌 ${fmtPct(industryTrend.changePct)}。` : "未取到行业板块行情，行业景气判断降级。"
     },
     {
       name: "市场背景覆盖",
@@ -325,9 +412,9 @@ function validateData(quote, metrics, news, extra = {}) {
   const passed = checks.filter((item) => item.ok).length;
   return {
     score: Math.round(passed / checks.length * 100),
-    level: passed >= 8 ? "较可用" : passed >= 6 ? "中等可信" : passed >= 4 ? "需复核" : "数据不足",
+    level: passed >= 10 ? "较可用" : passed >= 7 ? "中等可信" : passed >= 5 ? "需复核" : "数据不足",
     checks,
-    sources: ["东方财富公开行情接口", "东方财富历史K线接口", "东方财富搜索", "东方财富数据中心", "东方财富历史资金流", "东方财富指数行情"]
+    sources: ["东方财富公开行情接口", "东方财富历史K线接口", "东方财富搜索", "东方财富公告原文索引", "东方财富数据中心", "东方财富历史资金流", "东方财富指数行情", "东方财富行业板块行情"]
   };
 }
 
@@ -568,6 +655,7 @@ function buildReport(quote, metrics, news = [], validation = null, extra = {}) {
   const finance = extra.finance || null;
   const moneyFlow = extra.moneyFlow || [];
   const market = extra.market || null;
+  const industryTrend = extra.industryTrend || null;
   const recentFlow = moneyFlow.slice(-3).map((row) => `${row.date} ${fmtMoney(row.mainNetInflow)}`).join("；");
   const marketText = market?.indexes?.some((item) => Number.isFinite(item.changePct))
     ? `${market.mood}，主要指数平均涨跌 ${fmtPct(market.avgChange)}。${market.discipline}`
@@ -580,6 +668,9 @@ function buildReport(quote, metrics, news = [], validation = null, extra = {}) {
     moneyJudgement(quote, moneyFlow)
   ].join(" ");
   const financeText = financeJudgement(finance);
+  const industryText = industryTrend
+    ? `${industryTrend.name}：${industryTrend.mood}，板块涨跌 ${fmtPct(industryTrend.changePct)}，成交额 ${fmtMoney(industryTrend.amount)}，主力资金 ${fmtMoney(industryTrend.mainNetInflow)}，行业排名 ${industryTrend.rank || "--"}/${industryTrend.total || "--"}。`
+    : "行业板块行情未取到，行业景气只能根据个股行业字段和市场背景降级判断。";
   const newsText = newsJudgement(news, announcements);
   const qualityText = validation
     ? `数据可靠性：${validation.level}（校验分 ${validation.score}/100）。`
@@ -594,10 +685,11 @@ function buildReport(quote, metrics, news = [], validation = null, extra = {}) {
     summary: `${conclusion} 市场背景：${marketText}`,
     position: `仓位纪律：如果已经持有，先把 MA20 ${fmt(metrics.ma20)} 当风险观察线，把 ${fmt(metrics.high60)} 当上方压力观察；如果这只在账户里超过 35%，任何加仓都要先让位于“控制集中度”。如果空仓，不追当天大涨，优先等回踩 ${fmt(metrics.ma10)} / ${fmt(metrics.ma20)} 后看缩量企稳。`,
     market: marketText,
-    cycle: `周期框架：${quote.industry ? `行业/概念字段：${quote.industry}。` : "行业字段未返回，行业周期只能降级判断。"} 目前能确认的是市场价格和公开财务线索，不能把行业周期讲成确定结论。${financeText}`,
+    cycle: `周期框架：${quote.industry ? `行业/概念字段：${quote.industry}。` : "行业字段未返回，行业周期只能降级判断。"} 行业景气代理：${industryText} 财务验证：${financeText}`,
     technical: `K线执行：趋势为 ${trend(metrics)}，当前位置：${positionText}。近5日 ${fmtPct(metrics.ret5)}，近20日 ${fmtPct(metrics.ret20)}，近60日 ${fmtPct(metrics.ret60)}，60日最大回撤 ${fmtPct(metrics.drawdown60)}。量价判断：${volumeText} 反证条件：${invalidation}`,
     capital: capitalText,
     finance: financeText,
+    industry: industryText,
     news: `${news.length ? `新闻 ${news.length} 条。` : "新闻较少。"}${announcements.length ? `公告/财报线索 ${announcements.length} 条。` : "公告线索较少。"}${newsText}`,
     announcements: announcements.length ? announcements.map((item) => `${item.date ? `${item.date}：` : ""}${item.title}`).join("；") : "未抓到公告/财报线索。",
     quality: qualityText,
