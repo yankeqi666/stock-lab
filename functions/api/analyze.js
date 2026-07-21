@@ -503,50 +503,50 @@ function backtest(rows) {
 }
 
 function pricePosition(quote, metrics) {
-  if (!Number.isFinite(quote.price) || !Number.isFinite(metrics.ma20)) return "浣嶇疆涓嶆槑";
-  if (quote.price >= metrics.high60 * 0.97) return "鎺ヨ繎60鏃ュ帇鍔涘尯";
-  if (quote.price < metrics.ma20) return "璺岀牬涓湡椋庨櫓绾?;
-  if (quote.price > metrics.ma10 && metrics.ma10 > metrics.ma20) return "绔欏湪鐭腑鏈熷潎绾夸笂鏂?;
-  return "澶勫湪闇囪崱涓灑";
+  if (!Number.isFinite(quote.price) || !Number.isFinite(metrics.ma20)) return "位置不明";
+  if (quote.price >= metrics.high60 * 0.97) return "接近60日压力区";
+  if (quote.price < metrics.ma20) return "跌破中期风险线";
+  if (quote.price > metrics.ma10 && metrics.ma10 > metrics.ma20) return "站在短中期均线上方";
+  return "处在震荡中枢";
 }
 
 function volumeJudgement(quote, metrics) {
-  if (!Number.isFinite(metrics.volumeRatio)) return "閲忚兘鏁版嵁涓嶈冻";
-  if (metrics.volumeRatio >= 1.8 && quote.changePct > 0) return "鏀鹃噺涓婃定锛岃鏄庣煭绾胯祫閲戞効鎰忔帹锛屼絾鑻ユ帴杩戝帇鍔涗綅涔熷鏄撳啿楂樺洖钀?;
-  if (metrics.volumeRatio >= 1.8 && quote.changePct < 0) return "鏀鹃噺涓嬭穼锛岃鏄庡垎姝у拰鎶涘帇閮藉湪鏀惧ぇ锛岄渶瑕佷紭鍏堢湅椋庨櫓绾?;
-  if (metrics.volumeRatio <= 0.75) return "缂╅噺锛岃鏄庝富鍔ㄤ氦鏄撴剰鎰夸笉寮猴紝閫傚悎瑙傚療纭锛屼笉閫傚悎寮鸿涓嬬粨璁?;
-  return "閲忚兘姝ｅ父锛屾殏鏈舰鎴愬己楠岃瘉";
+  if (!Number.isFinite(metrics.volumeRatio)) return "量能数据不足";
+  if (metrics.volumeRatio >= 1.8 && quote.changePct > 0) return "放量上涨，说明短线资金愿意推，但如果接近压力位，也容易冲高回落。";
+  if (metrics.volumeRatio >= 1.8 && quote.changePct < 0) return "放量下跌，说明分歧和抛压都在放大，需要优先看风险线。";
+  if (metrics.volumeRatio <= 0.75) return "缩量，说明主动交易意愿不强，适合观察确认，不适合强行下结论。";
+  return "量能正常，暂未形成强验证。";
 }
 
 function moneyJudgement(quote, moneyFlow) {
   const latest = moneyFlow.slice(-3).filter((row) => Number.isFinite(row.mainNetInflow));
   const positiveDays = latest.filter((row) => row.mainNetInflow > 0).length;
   const negativeDays = latest.filter((row) => row.mainNetInflow < 0).length;
-  if (latest.length >= 3 && positiveDays >= 2) return `杩?鏃ヨ祫閲戞祦鏈?${positiveDays} 澶╁噣娴佸叆锛岀煭绾挎壙鎺ユ瘮绾笅璺屾椂濂斤紝浣嗚繕瑕佺湅鑳藉惁绔欑ǔ鍏抽敭绾裤€俙;
-  if (latest.length >= 3 && negativeDays >= 2) return `杩?鏃ヨ祫閲戞祦鏈?${negativeDays} 澶╁噣娴佸嚭锛岃鏄庤祫閲戞€佸害鍋忚皑鎱庯紝鍙嶅脊鏇撮渶瑕佹斁閲忕‘璁ゃ€俙;
-  if (Number.isFinite(quote.mainNetInflow)) return quote.mainNetInflow > 0 ? "褰撴棩涓诲姏鍑€娴佸叆涓烘锛屼絾缂哄皯杩炵画鎬ч獙璇併€? : "褰撴棩涓诲姏鍑€娴佸叆涓鸿礋锛岀煭绾胯祫閲戞€佸害鍋忚皑鎱庛€?;
-  return "璧勯噾娴佹湭鍙栧埌锛岃祫閲戦潰涓嶈兘浣滀负寮轰緷鎹€?;
+  if (latest.length >= 3 && positiveDays >= 2) return `近3日资金流有 ${positiveDays} 天净流入，短线承接比纯下跌时好，但还要看能否站稳关键线。`;
+  if (latest.length >= 3 && negativeDays >= 2) return `近3日资金流有 ${negativeDays} 天净流出，说明资金态度偏谨慎，反弹更需要放量确认。`;
+  if (Number.isFinite(quote.mainNetInflow)) return quote.mainNetInflow > 0 ? "当日主力净流入为正，但缺少连续性验证。" : "当日主力净流入为负，短线资金态度偏谨慎。";
+  return "资金流未取到，资金面不能作为强依据。";
 }
 
 function financeJudgement(finance) {
-  if (!finance) return "璐㈠姟鎽樿鏈彇鍒帮紝涓嶈兘璇勪环鐩堝埄璐ㄩ噺锛屽彧鑳芥妸璐㈠姟闈㈠垪涓虹己澶遍」銆?;
+  if (!finance) return "财务摘要未取到，不能评价盈利质量，只能把财务面列为缺失项。";
   const profitDown = Number.isFinite(finance.profitYoY) && finance.profitYoY < 0;
   const revenueDown = Number.isFinite(finance.revenueYoY) && finance.revenueYoY < 0;
   const roeGood = Number.isFinite(finance.roe) && finance.roe >= 10;
-  if (profitDown && revenueDown) return `鏈€杩戜竴鏈熻惀鏀跺悓姣?${fmtPct(finance.revenueYoY)}銆佸噣鍒╂鼎鍚屾瘮 ${fmtPct(finance.profitYoY)}锛岀粡钀ョ鍋忓急锛屾妧鏈弽寮逛笉鑳芥浛浠ｅ熀鏈潰淇銆俙;
-  if (profitDown) return `鏈€杩戜竴鏈熷噣鍒╂鼎鍚屾瘮 ${fmtPct(finance.profitYoY)}锛岀泩鍒╂湁鍘嬪姏锛岄渶瑕佺敤鍚庣画璐㈡姤楠岃瘉鏀瑰杽銆俙;
-  if (roeGood) return `鏈€杩戜竴鏈?ROE ${fmtPct(finance.roe)}锛岀泩鍒╄兘鍔涚嚎绱㈠皻鍙紝浣嗕粛瑕佺粨鍚堜及鍊煎拰瓒嬪娍銆俙;
-  return `鏈€杩戜竴鏈熻储鍔℃憳瑕佸凡鍙栧埌锛氳惀鏀?${fmtMoney(finance.revenue)}銆佸綊姣嶅噣鍒╂鼎 ${fmtMoney(finance.netProfit)}锛岄渶瑕佺户缁湅鍚屾瘮鍜岀幇閲戞祦璐ㄩ噺銆俙;
+  if (profitDown && revenueDown) return `最近一期营收同比 ${fmtPct(finance.revenueYoY)}、净利润同比 ${fmtPct(finance.profitYoY)}，经营端偏弱，技术反弹不能替代基本面修复。`;
+  if (profitDown) return `最近一期净利润同比 ${fmtPct(finance.profitYoY)}，盈利有压力，需要用后续财报验证改善。`;
+  if (roeGood) return `最近一期 ROE ${fmtPct(finance.roe)}，盈利能力线索尚可，但仍要结合估值和趋势。`;
+  return `最近一期财务摘要已取到：营收 ${fmtMoney(finance.revenue)}、归母净利润 ${fmtMoney(finance.netProfit)}，需要继续看同比和现金流质量。`;
 }
 
 function newsJudgement(news, announcements) {
   const titles = [...news, ...announcements].map((item) => item.title || "");
-  if (!titles.length) return "杩戞湡鏂伴椈鍜屽叕鍛婄嚎绱㈣緝灏戯紝娑堟伅闈笉鑳戒綔涓烘牳蹇冨垽鏂€?;
-  const bad = titles.filter((title) => /鍑忔寔|浜忔崯|澶勭綒|椋庨櫓|璇夎|涓嬫粦|閫€甯倈闂|绔嬫/.test(title)).length;
-  const good = titles.filter((title) => /澧為暱|鍥炶喘|澧炴寔|涓爣|绛剧害|鐩堝埄|绐佺牬|鍒嗙孩/.test(title)).length;
-  if (bad > good) return `娑堟伅绾跨储閲屽亸璐熼潰鐨勫叧閿瘝鏇村锛?{bad} 鏉★級锛岄渶瑕佸厛鏍稿鍏憡鍘熸枃锛屼笉鑳藉彧鐪嬩环鏍煎弽寮广€俙;
-  if (good > bad) return `娑堟伅绾跨储閲屽亸姝ｉ潰鐨勫叧閿瘝鏇村锛?{good} 鏉★級锛屼絾浠嶉渶纭鏄惁宸茬粡琚偂浠锋彁鍓嶅弽鏄犮€俙;
-  return `鎶撳埌 ${titles.length} 鏉℃柊闂?鍏憡绾跨储锛屾儏缁笉鏄庢樉鍋忎竴杈癸紝閲嶇偣鍥炲埌浠锋牸銆侀噺鑳藉拰璐㈡姤楠岃瘉銆俙;
+  if (!titles.length) return "近期新闻和公告线索较少，消息面不能作为核心判断。";
+  const bad = titles.filter((title) => /减持|亏损|处罚|风险|诉讼|下滑|退市|问询|立案/.test(title)).length;
+  const good = titles.filter((title) => /增长|回购|增持|中标|签约|盈利|突破|分红/.test(title)).length;
+  if (bad > good) return `消息线索里偏负面的关键词更多（${bad} 条），需要先核对公告原文，不能只看价格反弹。`;
+  if (good > bad) return `消息线索里偏正面的关键词更多（${good} 条），但仍需确认是否已经被股价提前反映。`;
+  return `抓到 ${titles.length} 条新闻/公告线索，情绪不明显偏一边，重点回到价格、量能和财报验证。`;
 }
 
 function expertConclusion(quote, metrics, extra) {
@@ -555,12 +555,12 @@ function expertConclusion(quote, metrics, extra) {
   const state = trend(metrics);
   const hot = metrics.rsi > 72 || quote.price >= metrics.high60 * 0.97;
   const broken = quote.price < metrics.ma20;
-  const strong = state === "鍧囩嚎澶氬ご" && quote.changePct >= 0 && !hot;
-  if (broken) return `鏍稿績鍒ゆ柇锛氳繖鍙幇鍦ㄤ笉鏄€滄壘鏈轰細鈥濈殑鐘舵€侊紝鑰屾槸鍏堢‘璁ら闄╂湁娌℃湁鎵╁ぇ銆備环鏍煎凡缁忎綆浜?MA20 椋庨櫓瑙傚療绾?${fmt(metrics.ma20)}锛屽鏋滀笉鑳介噸鏂扮珯鍥炲幓锛屽師鏉ョ殑鎸佹湁閫昏緫瑕侀檷绾с€俙;
-  if (hot) return `鏍稿績鍒ゆ柇锛氱煭绾跨儹搴﹀亸楂橈紝閫傚悎澶嶆牳鑰屼笉鏄啿鍔ㄨ拷銆傚綋鍓嶄綅缃负${position}锛孯SI ${fmt(metrics.rsi, 0)}锛屾帴涓嬫潵瑕佺湅鏀鹃噺绐佺牬鏄惁鐪熷疄锛岃繕鏄珮浣嶅垎姝с€俙;
-  if (strong) return `鏍稿績鍒ゆ柇锛氳蛋鍔挎殏鏃跺浜庤緝鍋ュ悍鐨勮瀵熺姸鎬併€傚潎绾跨粨鏋勪负${state}锛屼环鏍煎湪鍏抽敭鍧囩嚎涓婃柟锛屼絾浠嶉渶瑕佽祫閲戞祦鍜屽競鍦鸿儗鏅户缁厤鍚堛€俙;
-  if (market?.mood === "甯傚満鍋忓急") return `鏍稿績鍒ゆ柇锛氫釜鑲℃殏鏈畬鍏ㄨ蛋鍧忥紝浣嗗競鍦鸿儗鏅亸寮憋紝浠撲綅鍔ㄤ綔瑕佷繚瀹堬紝浼樺厛鐪嬮闄╃嚎鍜岄噺鑳界‘璁ゃ€俙;
-  return `鏍稿績鍒ゆ柇锛氬綋鍓嶆洿鍍忛渿鑽¤瀵燂紝涓嶆槸寮轰拱鐐逛篃涓嶆槸蹇呴』鍥為伩鐐广€傚叧閿湪浜庡悗闈㈣兘鍚︾珯绋?${fmt(metrics.ma20)} 骞剁獊鐮?${fmt(metrics.high60)}銆俙;
+  const strong = state === "均线多头" && quote.changePct >= 0 && !hot;
+  if (broken) return `核心判断：这只现在不是“找机会”的状态，而是先确认风险有没有扩大。价格已经低于 MA20 风险观察线 ${fmt(metrics.ma20)}，如果不能重新站回去，原来的持有逻辑要降级。`;
+  if (hot) return `核心判断：短线热度偏高，适合复核而不是冲动追。当前位置为${position}，RSI ${fmt(metrics.rsi, 0)}，接下来要看放量突破是否真实，还是高位分歧。`;
+  if (strong) return `核心判断：走势暂时处于较健康的观察状态。均线结构为${state}，价格在关键均线上方，但仍需要资金流和市场背景继续配合。`;
+  if (market?.mood === "市场偏弱") return `核心判断：个股暂未完全走坏，但市场背景偏弱，仓位动作要保守，优先看风险线和量能确认。`;
+  return `核心判断：当前更像震荡观察，不是强买点，也不是必须回避点。关键在于后面能否站稳 ${fmt(metrics.ma20)} 并突破 ${fmt(metrics.high60)}。`;
 }
 
 function buildReport(quote, metrics, news = [], validation = null, extra = {}) {
@@ -568,41 +568,41 @@ function buildReport(quote, metrics, news = [], validation = null, extra = {}) {
   const finance = extra.finance || null;
   const moneyFlow = extra.moneyFlow || [];
   const market = extra.market || null;
-  const recentFlow = moneyFlow.slice(-3).map((row) => `${row.date} ${fmtMoney(row.mainNetInflow)}`).join("锛?);
+  const recentFlow = moneyFlow.slice(-3).map((row) => `${row.date} ${fmtMoney(row.mainNetInflow)}`).join("；");
   const marketText = market?.indexes?.some((item) => Number.isFinite(item.changePct))
-    ? `${market.mood}锛屼富瑕佹寚鏁板钩鍧囨定璺?${fmtPct(market.avgChange)}銆?{market.discipline}`
-    : "鎸囨暟蹇収鏈彇鍒帮紝鏈甯傚満鑳屾櫙鍒ゆ柇闄嶇骇銆?;
+    ? `${market.mood}，主要指数平均涨跌 ${fmtPct(market.avgChange)}。${market.discipline}`
+    : "指数快照未取到，本次市场背景判断降级。";
   const capitalText = [
     Number.isFinite(quote.mainNetInflow)
-      ? `褰撴棩涓诲姏鍑€娴佸叆绾?${fmtMoney(quote.mainNetInflow)}锛屽崰姣?${fmt(quote.mainNetInflowPct, 2)}%銆俙
-      : "鍏嶈垂鎺ュ彛鏈繑鍥炲綋鏃ヨ祫閲戞祦銆?,
-    recentFlow ? `杩戝嚑鏃ヨ祫閲戞祦锛?{recentFlow}銆俙 : "鍘嗗彶璧勯噾娴佹湭鍙栧埌锛屼笉鑳界‘璁よ祫閲戣繛缁€с€?,
+      ? `当日主力净流入约 ${fmtMoney(quote.mainNetInflow)}，占比 ${fmt(quote.mainNetInflowPct, 2)}%。`
+      : "免费接口未返回当日资金流。",
+    recentFlow ? `近几日资金流：${recentFlow}。` : "历史资金流未取到，不能确认资金连续性。",
     moneyJudgement(quote, moneyFlow)
-  ].join("");
+  ].join(" ");
   const financeText = financeJudgement(finance);
   const newsText = newsJudgement(news, announcements);
   const qualityText = validation
-    ? `鏁版嵁鍙潬鎬э細${validation.level}锛堟牎楠屽垎 ${validation.score}/100锛夈€俙
-    : "鏁版嵁鍙潬鎬э細鏈牎楠屻€?;
+    ? `数据可靠性：${validation.level}（校验分 ${validation.score}/100）。`
+    : "数据可靠性：未校验。";
   const positionText = pricePosition(quote, metrics);
   const volumeText = volumeJudgement(quote, metrics);
   const conclusion = expertConclusion(quote, metrics, extra);
   const invalidation = quote.price < metrics.ma20
-    ? `鑻ュ悗缁粛鏃犳硶绔欏洖 ${fmt(metrics.ma20)}锛屽苟涓旇祫閲戠户缁祦鍑猴紝搴旀妸瀹冧粠鈥滄寔鏈夎瀵熲€濋檷涓衡€滈闄╁鐞嗏€濄€俙
-    : `鑻ヨ穼鐮?${fmt(metrics.ma20)} 涓旀斁閲忥紝璇存槑涓湡绾緥琚牬鍧忥紱鑻ュ啿鍒?${fmt(metrics.high60)} 闄勮繎浣嗛噺鑳借窡涓嶄笂锛岃鏄庝笂鏂规姏鍘嬩粛閲嶃€俙;
+    ? `若后续仍无法站回 ${fmt(metrics.ma20)}，并且资金继续流出，应把它从“持有观察”降为“风险处理”。`
+    : `若跌破 ${fmt(metrics.ma20)} 且放量，说明中期纪律被破坏；若冲到 ${fmt(metrics.high60)} 附近但量能跟不上，说明上方压力仍重。`;
   return {
-    summary: `${conclusion} 甯傚満鑳屾櫙锛?{marketText}`,
-    position: `浠撲綅绾緥锛氬鏋滃凡缁忔寔鏈夛紝鍏堟妸 MA20 ${fmt(metrics.ma20)} 褰撻闄╄瀵熺嚎锛屾妸 ${fmt(metrics.high60)} 褰撲笂鏂瑰帇鍔涜瀵燂紱濡傛灉杩欏彧鍦ㄨ处鎴烽噷瓒呰繃 35%锛屼换浣曞姞浠撻兘瑕佸厛璁╀綅浜庘€滄帶鍒堕泦涓害鈥濄€傚鏋滅┖浠擄紝涓嶈拷褰撳ぉ澶ф定锛屼紭鍏堢瓑鍥炶俯 ${fmt(metrics.ma10)} / ${fmt(metrics.ma20)} 鍚庣湅缂╅噺浼佺ǔ銆俙,
+    summary: `${conclusion} 市场背景：${marketText}`,
+    position: `仓位纪律：如果已经持有，先把 MA20 ${fmt(metrics.ma20)} 当风险观察线，把 ${fmt(metrics.high60)} 当上方压力观察；如果这只在账户里超过 35%，任何加仓都要先让位于“控制集中度”。如果空仓，不追当天大涨，优先等回踩 ${fmt(metrics.ma10)} / ${fmt(metrics.ma20)} 后看缩量企稳。`,
     market: marketText,
-    cycle: `鍛ㄦ湡妗嗘灦锛?{quote.industry ? `琛屼笟/姒傚康瀛楁锛?{quote.industry}銆俙 : "琛屼笟瀛楁鏈繑鍥烇紝琛屼笟鍛ㄦ湡鍙兘闄嶇骇鍒ゆ柇銆?} 鐩墠鑳界‘璁ょ殑鏄競鍦轰环鏍煎拰鍏紑璐㈠姟绾跨储锛屼笉鑳芥妸琛屼笟鍛ㄦ湡璁叉垚纭畾缁撹銆?{financeText}`,
-    technical: `K绾挎墽琛岋細瓒嬪娍涓?${trend(metrics)}锛屽綋鍓嶄綅缃細${positionText}銆傝繎5鏃?${fmtPct(metrics.ret5)}锛岃繎20鏃?${fmtPct(metrics.ret20)}锛岃繎60鏃?${fmtPct(metrics.ret60)}锛?0鏃ユ渶澶у洖鎾?${fmtPct(metrics.drawdown60)}銆傞噺浠峰垽鏂細${volumeText} 鍙嶈瘉鏉′欢锛?{invalidation}`,
+    cycle: `周期框架：${quote.industry ? `行业/概念字段：${quote.industry}。` : "行业字段未返回，行业周期只能降级判断。"} 目前能确认的是市场价格和公开财务线索，不能把行业周期讲成确定结论。${financeText}`,
+    technical: `K线执行：趋势为 ${trend(metrics)}，当前位置：${positionText}。近5日 ${fmtPct(metrics.ret5)}，近20日 ${fmtPct(metrics.ret20)}，近60日 ${fmtPct(metrics.ret60)}，60日最大回撤 ${fmtPct(metrics.drawdown60)}。量价判断：${volumeText} 反证条件：${invalidation}`,
     capital: capitalText,
     finance: financeText,
-    news: `${news.length ? `鏂伴椈 ${news.length} 鏉°€俙 : "鏂伴椈杈冨皯銆?}${announcements.length ? `鍏憡/璐㈡姤绾跨储 ${announcements.length} 鏉°€俙 : "鍏憡绾跨储杈冨皯銆?}${newsText}`,
-    announcements: announcements.length ? announcements.map((item) => `${item.date ? `${item.date}锛歚 : ""}${item.title}`).join("锛?) : "鏈姄鍒板叕鍛?璐㈡姤绾跨储銆?,
+    news: `${news.length ? `新闻 ${news.length} 条。` : "新闻较少。"}${announcements.length ? `公告/财报线索 ${announcements.length} 条。` : "公告线索较少。"}${newsText}`,
+    announcements: announcements.length ? announcements.map((item) => `${item.date ? `${item.date}：` : ""}${item.title}`).join("；") : "未抓到公告/财报线索。",
     quality: qualityText,
-    risk: `${conclusion} 鏉′欢鍖栬鍒掞細绗竴锛岀湅 ${fmt(metrics.ma20)} 鏄惁瀹堜綇锛涚浜岋紝鐪?${fmt(metrics.high60)} 闄勮繎鏄惁鏀鹃噺鏈夋晥绐佺牬锛涚涓夛紝鐪嬭祫閲戞祦鏄惁杩炵画锛岃€屼笉鏄彧鐪嬩竴澶┿€傚厤璐ｅ０鏄庯細浠呭仛鍏紑淇℃伅鏁寸悊鍜屽鐩橈紝涓嶆瀯鎴愭姇璧勫缓璁紝涓嶄繚璇佹敹鐩娿€俙,
-    sources: validation?.sources || ["涓滄柟璐㈠瘜鍏紑琛屾儏鎺ュ彛", "涓滄柟璐㈠瘜鍘嗗彶K绾挎帴鍙?]
+    risk: `${conclusion} 条件化规划：第一，看 ${fmt(metrics.ma20)} 是否守住；第二，看 ${fmt(metrics.high60)} 附近是否放量有效突破；第三，看资金流是否连续，而不是只看一天。免责声明：仅做公开信息整理和复盘，不构成投资建议，不保证收益。`,
+    sources: validation?.sources || ["东方财富公开行情接口", "东方财富历史K线接口"]
   };
 }
 
